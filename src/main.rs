@@ -1,86 +1,53 @@
 use bevy::prelude::*;
 use bevy::reflect::TypeUuid;
-use ndarray::prelude::*;
+use bevy::render::camera::Camera;
+use ndarray::{prelude::*, Zip};
 use std::ops::{Deref, DerefMut};
-
-use bevy::asset::{AssetLoader, LoadContext, LoadedAsset};
-use bevy::utils::BoxedFuture;
-use ca_formats::rle::Rle;
-
-#[derive(Default)]
-pub struct CafLoader;
-
-impl AssetLoader for CafLoader {
-    fn extensions(&self) -> &[&str] {
-        &["rle"]
-    }
-
-    fn load<'a>(
-        &'a self,
-        bytes: &'a [u8],
-        load_context: &'a mut LoadContext,
-    ) -> BoxedFuture<'a, Result<(), anyhow::Error>> {
-        Box::pin(async move {
-            let loaded = Rle::new(std::str::from_utf8(&bytes).unwrap())?;
-            let mut board = Board::new(
-                loaded.header_data().unwrap().x as usize,
-                loaded.header_data().unwrap().y as usize,
-            );
-            for cell in loaded.into_iter() {
-                let pos = cell.unwrap().position;
-                if let Some(c) = board.get_mut((pos.0 as usize, pos.1 as usize)) {
-                    *c = 1u8;
-                }
-            }
-            // let board = Board::new(512, 512);
-            dbg!("board created out of thin air");
-            load_context.set_default_asset(LoadedAsset::new(board));
-            Ok(())
-        })
-    }
-}
 
 #[derive(Debug, TypeUuid, Clone)]
 #[uuid = "3e6c203c-76a0-4acc-a812-8d48ee685e61"]
-pub struct Board(pub Array2<u8>);
+struct Board(pub Array2<Cell>);
 
 impl Board {
     pub fn new(width: usize, height: usize) -> Board {
-        Board(Array2::zeros((width, height)))
+        Board(Array2::from_elem((width, height), Cell::Air))
     }
 }
 
 impl Deref for Board {
-    type Target = Array2<u8>;
-    fn deref(&self) -> &Array2<u8> {
+    type Target = Array2<Cell>;
+    fn deref(&self) -> &Array2<Cell> {
         &self.0
     }
 }
 
 impl DerefMut for Board {
-    fn deref_mut(&mut self) -> &mut Array2<u8> {
+    fn deref_mut(&mut self) -> &mut Array2<Cell> {
         &mut self.0
     }
 }
 
 #[derive(Default)]
 struct BoardState {
-    handle: Handle<Board>,
-    loaded: bool,
+    setup: bool,
 }
 
-#[derive(Clone)]
-struct Cell(bool);
+#[derive(Clone, Debug, PartialEq)]
+enum Cell {
+    Bedrock,
+    Air,
+    Sand,
+}
 
-pub struct GameOfLife {
+pub struct FallingSand {
     cells: Board,
     scratch: Board,
     texture: Handle<Texture>,
 }
 
-impl GameOfLife {
+impl FallingSand {
     fn new(width: usize, height: usize, texture: Handle<Texture>) -> Self {
-        GameOfLife {
+        FallingSand {
             cells: Board::new(width + 2, height + 2),
             scratch: Board::new(width, height),
             texture,
@@ -90,37 +57,31 @@ impl GameOfLife {
     fn new_from_board(board: &Board, texture: Handle<Texture>) -> Self {
         let width = board.nrows();
         let height = board.ncols();
-        GameOfLife {
+        FallingSand {
             cells: board.clone(),
             scratch: Board::new(width - 2, height - 2),
             texture,
         }
     }
 
-    // from https://github.com/rust-ndarray/ndarray/blob/master/examples/life.rs
-
     fn iterate(&mut self) {
-        let z = &mut self.cells;
-        // compute number of neighbors
-        let mut neigh = self.scratch.view_mut();
-        neigh.fill(0);
-        neigh += &z.slice(s![0..-2, 0..-2]);
-        neigh += &z.slice(s![0..-2, 1..-1]);
-        neigh += &z.slice(s![0..-2, 2..]);
+        self.scratch.view_mut().fill(Cell::Air);
 
-        neigh += &z.slice(s![1..-1, 0..-2]);
-        neigh += &z.slice(s![1..-1, 2..]);
+        Zip::from(self.cells.windows((3, 3))).map_assign_into(
+            &mut self.scratch.0,
+            |neigh| unsafe {
+                if *neigh.uget((1, 1)) == Cell::Air && *neigh.uget((1, 0)) == Cell::Sand
+                    || *neigh.uget((1, 1)) == Cell::Sand && *neigh.uget((1, 2)) == Cell::Sand
+                    || *neigh.uget((1, 1)) == Cell::Sand && *neigh.uget((1, 2)) == Cell::Bedrock
+                {
+                    Cell::Sand
+                } else {
+                    Cell::Air
+                }
+            },
+        );
 
-        neigh += &z.slice(s![2.., 0..-2]);
-        neigh += &z.slice(s![2.., 1..-1]);
-        neigh += &z.slice(s![2.., 2..]);
-
-        // birth where n = 3 and z[i] = 0,
-        // survive where n = 2 || n = 3 and z[i] = 1
-        let mut zv = z.slice_mut(s![1..-1, 1..-1]);
-
-        // this is autovectorized amazingly well!
-        zv.zip_mut_with(&neigh, |y, &n| *y = ((n == 3) || (n == 2 && *y > 0)) as u8);
+        self.cells.slice_mut(s![1..-1, 1..-1]).assign(&self.scratch);
     }
 }
 
@@ -133,20 +94,13 @@ fn main() {
     #[cfg(target_arch = "wasm32")]
     app.add_plugins(bevy_webgl2::DefaultPlugins);
 
-    app.add_asset::<Board>().init_asset_loader::<CafLoader>();
-    app.init_resource::<BoardState>();
-
     app.add_startup_system(setup.system())
-        .add_startup_system(load_board.system())
+        .insert_resource(BoardState::default())
         .add_system(grid_system.system())
         .add_system(setup_board.system())
+        .add_system(draw_tool_system.system())
         .insert_resource(ClearColor(Color::WHITE))
         .run();
-}
-
-fn load_board(mut state: ResMut<BoardState>, asset_server: Res<AssetServer>) {
-    state.handle = asset_server.load("patterns/p124.rle");
-    dbg!("loading board");
 }
 
 fn setup(mut commands: Commands) {
@@ -159,23 +113,17 @@ fn setup_board(
     mut state: ResMut<BoardState>,
     mut textures: ResMut<Assets<Texture>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
-    boards: Res<Assets<Board>>,
 ) {
-    let board = boards.get(&state.handle);
-    if state.loaded || board.is_none() {
+    if state.setup {
         return;
     };
     dbg!("setting up the board");
 
-    let border = 6;
-
-    let a = board.unwrap();
     let a = {
-        let mut b = Board::new(a.nrows() + border, a.ncols() + border);
-        let border = (border / 2) as i32;
-        b.slice_mut(s![border..-border, border..-border])
-            .assign(&a.0);
-        b
+        let mut a = Board::new(100, 100);
+        a.slice_mut(s![10..20, 1]).fill(Cell::Sand);
+        a.slice_mut(s![0..99, 99]).fill(Cell::Bedrock);
+        a
     };
 
     let width = a.nrows();
@@ -202,27 +150,85 @@ fn setup_board(
             transform: Transform::from_scale(Vec3::new(scale, scale, 1.0)),
             ..Default::default()
         })
-        .insert(GameOfLife::new_from_board(&a, texture));
+        .insert(FallingSand::new_from_board(&a, texture));
 
-    state.loaded = true;
+    state.setup = true;
 }
 
-fn grid_system(mut grid_query: Query<&mut GameOfLife>, mut textures: ResMut<Assets<Texture>>) {
+fn grid_system(mut grid_query: Query<&mut FallingSand>, mut textures: ResMut<Assets<Texture>>) {
     for mut grid in grid_query.iter_mut() {
         grid.iterate();
 
         if let Some(texture) = textures.get_mut(&grid.texture) {
             texture.data = grid
                 .cells
+                .t()
                 .iter()
-                .flat_map(|cell| {
-                    if *cell > 0 {
-                        [0u8, 0u8, 0u8, 255u8]
-                    } else {
-                        [255u8, 255u8, 255u8, 255u8]
-                    }
+                .flat_map(|cell| match *cell {
+                    Cell::Sand => [244, 215, 21, 255u8],
+                    Cell::Bedrock => [77, 77, 77, 255u8],
+                    _ => [255u8, 255u8, 255u8, 255u8],
                 })
                 .collect();
         }
     }
+}
+
+fn draw_tool_system(
+    windows: Res<Windows>,
+    mut grid_query: Query<(&mut FallingSand, &GlobalTransform)>,
+    mouse_button_input: Res<Input<MouseButton>>,
+    camera_transforms: Query<&GlobalTransform, With<Camera>>,
+) {
+    let maybe_window: Option<Vec3> = windows.get_primary().and_then(|window| {
+        window.cursor_position().map(|cursor_position| {
+            Vec3::new(
+                cursor_position.x - window.width() / 2.0,
+                cursor_position.y - window.height() / 2.0,
+                0.0,
+            )
+        })
+    });
+    let cursor_position = if let Some(window) = maybe_window {
+        window
+    } else {
+        return;
+    };
+
+    if !mouse_button_input.pressed(MouseButton::Left) {
+        return;
+    }
+
+    for camera_transform in camera_transforms.iter() {
+        for (mut grid, grid_transform) in grid_query.iter_mut() {
+            let tile_position = get_tile_position_under_cursor(
+                cursor_position,
+                camera_transform,
+                grid_transform,
+                (grid.cells.nrows(), grid.cells.ncols()),
+                8,
+            );
+            if tile_position.0 > 0 && tile_position.1 > 0 {
+                if let Some(cell) = grid.cells.get_mut((tile_position.0 as usize, tile_position.1 as usize)) {
+                    *cell = Cell::Sand;
+                }
+            }
+        }
+    }
+}
+
+fn get_tile_position_under_cursor(
+    cursor_position: Vec3,
+    camera_transform: &GlobalTransform,
+    tilemap_transform: &GlobalTransform,
+    grid_size: (usize, usize),
+    tile_size: u32,
+) -> (i32, i32) {
+    let translation = (camera_transform.mul_vec3(cursor_position)) - tilemap_transform.translation;
+    let point_x = translation.x / tile_size as f32;
+    let point_y = translation.y / tile_size as f32;
+    (
+        point_x.floor() as i32 + (grid_size.0 / 2) as i32,
+        -point_y.floor() as i32 + (grid_size.1 / 2) as i32,
+    )
 }

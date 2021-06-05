@@ -33,8 +33,8 @@
       rec {
         packages =
           rec {
-            game-of-life = naersk-lib.buildPackage {
-              pname = "game-of-life-bevy";
+            falling-sand = naersk-lib.buildPackage {
+              pname = "falling-sand";
               root = ./.;
               nativeBuildInputs = with pkgs; [
                 pkg-config
@@ -50,14 +50,14 @@
                 python3
               ];
             };
-            game-of-life-web =
+            falling-sand-web =
               let
-                game-of-life-wasm = (game-of-life.overrideAttrs (attrs: {
+                falling-sand-wasm = (falling-sand.overrideAttrs (attrs: {
                   CARGO_BUILD_TARGET = "wasm32-unknown-unknown";
                 }));
               in
               pkgs.stdenv.mkDerivation {
-                name = "game-of-life-web";
+                name = "falling-sand-web";
                 src = ./.;
                 nativeBuildInputs = with pkgs; [
                   wasm-bindgen-cli
@@ -65,22 +65,22 @@
                 phases = [ "unpackPhase" "installPhase" ];
                 installPhase = ''
                   mkdir -p $out
-                  wasm-bindgen --out-dir $out --out-name wasm --target web --no-typescript ${game-of-life-wasm}/bin/game-of-life-bevy.wasm
+                  wasm-bindgen --out-dir $out --out-name wasm --target web --no-typescript ${falling-sand-wasm}/bin/falling-sand.wasm
                   cp index.html $out/index.html
                   cp -r assets $out/assets
                 '';
               };
           };
 
-        defaultPackage = packages.game-of-life;
+        defaultPackage = packages.falling-sand;
 
-        apps.game-of-life = utils.lib.mkApp {
-          drv = packages.game-of-life;
+        apps.falling-sand = utils.lib.mkApp {
+          drv = packages.falling-sand;
         };
-        defaultApp = apps.game-of-life;
+        defaultApp = apps.falling-sand;
 
         devShell = pkgs.mkShell {
-          inputsFrom = [ packages.game-of-life ];
+          inputsFrom = [ packages.falling-sand ];
           RUST_SRC_PATH = "${pkgs.rust-bin.stable.latest.rust-src}/lib/rustlib/src/rust/library/";
           buildInputs = with pkgs; [
             rust-bin.stable.latest.default

@@ -13,7 +13,7 @@ jobs:
         install_options: '--tarball-url-prefix https://nixos-nix-install-tests.cachix.org/serve'
         extra_nix_config: |
           experimental-features = nix-command flakes
-    - run: nix build .#game-of-life-web -L
+    - run: nix build .#falling-sand-web -L
     - name: Deploy
       uses: peaceiris/actions-gh-pages@v3
       with:
