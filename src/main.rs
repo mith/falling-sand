@@ -27,16 +27,16 @@ impl DerefMut for Board {
     }
 }
 
-#[derive(Default)]
-struct BoardState {
-    setup: bool,
-}
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 enum Cell {
     Bedrock,
     Air,
     Sand,
+}
+
+struct ToolState {
+    draw_type: Cell
 }
 
 pub struct FallingSand {
@@ -88,6 +88,11 @@ impl FallingSand {
 fn main() {
     let mut app = App::build();
 
+    app.insert_resource(WindowDescriptor {
+            mode: bevy::window::WindowMode::BorderlessFullscreen,
+            ..Default::default()
+        });
+
     #[cfg(not(target_arch = "wasm32"))]
     app.add_plugins(DefaultPlugins);
 
@@ -95,28 +100,19 @@ fn main() {
     app.add_plugins(bevy_webgl2::DefaultPlugins);
 
     app.add_startup_system(setup.system())
-        .insert_resource(BoardState::default())
         .add_system(grid_system.system())
-        .add_system(setup_board.system())
         .add_system(draw_tool_system.system())
         .insert_resource(ClearColor(Color::WHITE))
+        .insert_resource(ToolState { draw_type: Cell::Sand })
         .run();
 }
 
-fn setup(mut commands: Commands) {
-    commands.spawn_bundle(OrthographicCameraBundle::new_2d());
-    dbg!("setup camera");
-}
-
-fn setup_board(
+fn setup(
     mut commands: Commands,
-    mut state: ResMut<BoardState>,
     mut textures: ResMut<Assets<Texture>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
 ) {
-    if state.setup {
-        return;
-    };
+    commands.spawn_bundle(OrthographicCameraBundle::new_2d());
     dbg!("setting up the board");
 
     let a = {
@@ -151,8 +147,6 @@ fn setup_board(
             ..Default::default()
         })
         .insert(FallingSand::new_from_board(&a, texture));
-
-    state.setup = true;
 }
 
 fn grid_system(mut grid_query: Query<&mut FallingSand>, mut textures: ResMut<Assets<Texture>>) {
@@ -179,6 +173,7 @@ fn draw_tool_system(
     mut grid_query: Query<(&mut FallingSand, &GlobalTransform)>,
     mouse_button_input: Res<Input<MouseButton>>,
     camera_transforms: Query<&GlobalTransform, With<Camera>>,
+    tool_state: Res<ToolState>
 ) {
     let maybe_window: Option<Vec3> = windows.get_primary().and_then(|window| {
         window.cursor_position().map(|cursor_position| {
@@ -210,7 +205,9 @@ fn draw_tool_system(
             );
             if tile_position.0 > 0 && tile_position.1 > 0 {
                 if let Some(cell) = grid.cells.get_mut((tile_position.0 as usize, tile_position.1 as usize)) {
-                    *cell = Cell::Sand;
+                    if *cell != Cell::Bedrock {
+                        *cell = tool_state.draw_type;
+                    }
                 }
             }
         }
