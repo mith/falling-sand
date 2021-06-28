@@ -1,7 +1,10 @@
+#[macro_use]
+extern crate enum_map;
+
 use bevy::prelude::*;
 use bevy::reflect::TypeUuid;
 use bevy::render::camera::Camera;
-use bevy::utils::HashMap;
+use enum_map::EnumMap;
 use ndarray::{prelude::*, Zip};
 use std::ops::{Deref, DerefMut};
 
@@ -28,7 +31,7 @@ impl DerefMut for Board {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Enum)]
 enum Material {
     Bedrock,
     Air,
@@ -36,7 +39,7 @@ enum Material {
     Water,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Enum)]
 enum Phase {
     Solid,
     Liquid,
@@ -47,21 +50,23 @@ struct ToolState {
     draw_type: Material,
 }
 
-struct MaterialDensities(HashMap<Material, u32>);
-struct MaterialPhases(HashMap<Material, Phase>);
+struct MaterialDensities(EnumMap<Material, u32>);
+struct MaterialPhases(EnumMap<Material, Phase>);
 
 pub struct FallingSand {
     cells: Board,
     scratch: Board,
     texture: Handle<Texture>,
+    odd_timestep: bool,
 }
 
 impl FallingSand {
     fn new(width: usize, height: usize, texture: Handle<Texture>) -> Self {
         FallingSand {
-            cells: Board::new(width + 2, height + 2),
+            cells: Board::new(width, height),
             scratch: Board::new(width, height),
             texture,
+            odd_timestep: false,
         }
     }
 
@@ -70,8 +75,9 @@ impl FallingSand {
         let height = board.ncols();
         FallingSand {
             cells: board.clone(),
-            scratch: Board::new(width - 2, height - 2),
+            scratch: Board::new(width, height),
             texture,
+            odd_timestep: false,
         }
     }
 
@@ -81,33 +87,120 @@ impl FallingSand {
         material_phases: &MaterialPhases,
     ) {
         // TODO move this function to gravity_system, without tripping up the borrow checker
-        self.scratch.view_mut().fill(Material::Air);
+        let (source, target) = {
+            if !self.odd_timestep {
+                (self.cells.view(), self.scratch.view_mut())
+            } else {
+                (
+                    self.cells.slice(s![1..-1, 1..-1]),
+                    self.scratch.slice_mut(s![1..-1, 1..-1]),
+                )
+            }
+        };
 
-        Zip::from(self.cells.windows((3, 3))).map_assign_into(
-            &mut self.scratch.0,
-            |neigh| unsafe {
+        // Method from: https://ir.cwi.nl/pub/4545
+
+        Zip::from(target.reversed_axes().exact_chunks_mut((2, 2)))
+            .and(source.reversed_axes().exact_chunks((2, 2)))
+            .for_each(|mut s, neigh| {
                 if neigh.iter().all(|material| *material == Material::Air) {
-                    return Material::Air;
-                }
-
-                let current_material = *neigh.uget((1, 1));
-                if current_material == Material::Bedrock {
-                    return current_material;
-                }
-
-                let material_below = *neigh.uget((1, 2));
-                let material_above = *neigh.uget((1, 0));
-                if material_phases.0.get(&material_below).unwrap() != &Phase::Solid && material_densities.0.get(&current_material).unwrap() > material_densities.0.get(&material_below).unwrap() {
-                    return material_below;
-                } else if material_phases.0.get(&material_above).unwrap() != &Phase::Solid && material_densities.0.get(&current_material).unwrap() < material_densities.0.get(&material_above).unwrap() {
-                    return material_above;
+                    s.assign(&neigh);
+                } else if neigh
+                    == arr2(&[
+                        [Material::Sand, Material::Air],
+                        [Material::Air, Material::Air],
+                    ])
+                {
+                    s.assign(&arr2(&[
+                        [Material::Air, Material::Air],
+                        [Material::Sand, Material::Air],
+                    ]));
+                } else if neigh
+                    == arr2(&[
+                        [Material::Air, Material::Sand],
+                        [Material::Air, Material::Air],
+                    ])
+                {
+                    s.assign(&arr2(&[
+                        [Material::Air, Material::Air],
+                        [Material::Air, Material::Sand],
+                    ]));
+                } else if neigh
+                    == arr2(&[
+                        [Material::Sand, Material::Sand],
+                        [Material::Air, Material::Air],
+                    ])
+                {
+                    s.assign(&arr2(&[
+                        [Material::Air, Material::Air],
+                        [Material::Sand, Material::Sand],
+                    ]));
+                } else if neigh
+                    == arr2(&[
+                        [Material::Sand, Material::Air],
+                        [Material::Air, Material::Sand],
+                    ])
+                {
+                    s.assign(&arr2(&[
+                        [Material::Air, Material::Air],
+                        [Material::Sand, Material::Sand],
+                    ]));
+                } else if neigh
+                    == arr2(&[
+                        [Material::Air, Material::Sand],
+                        [Material::Sand, Material::Air],
+                    ])
+                {
+                    s.assign(&arr2(&[
+                        [Material::Air, Material::Air],
+                        [Material::Sand, Material::Sand],
+                    ]));
+                } else if neigh
+                    == arr2(&[
+                        [Material::Sand, Material::Air],
+                        [Material::Sand, Material::Air],
+                    ])
+                {
+                    s.assign(&arr2(&[
+                        [Material::Air, Material::Air],
+                        [Material::Sand, Material::Sand],
+                    ]));
+                } else if neigh
+                    == arr2(&[
+                        [Material::Air, Material::Sand],
+                        [Material::Air, Material::Sand],
+                    ])
+                {
+                    s.assign(&arr2(&[
+                        [Material::Air, Material::Air],
+                        [Material::Sand, Material::Sand],
+                    ]));
+                } else if neigh
+                    == arr2(&[
+                        [Material::Sand, Material::Sand],
+                        [Material::Air, Material::Sand],
+                    ])
+                {
+                    s.assign(&arr2(&[
+                        [Material::Air, Material::Sand],
+                        [Material::Sand, Material::Sand],
+                    ]));
+                } else if neigh
+                    == arr2(&[
+                        [Material::Sand, Material::Sand],
+                        [Material::Sand, Material::Air],
+                    ])
+                {
+                    s.assign(&arr2(&[
+                        [Material::Sand, Material::Air],
+                        [Material::Sand, Material::Sand],
+                    ]));
                 } else {
-                    return current_material;
+                    s.assign(&neigh);
                 }
-            },
-        );
-
-        self.cells.slice_mut(s![1..-1, 1..-1]).assign(&self.scratch);
+            });
+        self.cells.assign(&self.scratch);
+        self.odd_timestep = !self.odd_timestep;
     }
 }
 
@@ -131,20 +224,20 @@ fn main() {
         .add_system(draw_tool_system.system())
         .add_system(switch_tool_system.system())
         .insert_resource({
-            let mut map = HashMap::default();
-            map.insert(Material::Air, 0);
-            map.insert(Material::Water, 1);
-            map.insert(Material::Sand, 2);
-            map.insert(Material::Bedrock, 3);
-            MaterialDensities(map)
+            MaterialDensities(enum_map! {
+            Material::Air => 0,
+            Material::Water => 1,
+            Material::Sand => 2,
+            Material::Bedrock => 3,
+            })
         })
         .insert_resource({
-            let mut map = HashMap::default();
-            map.insert(Material::Air, Phase::Gas);
-            map.insert(Material::Water, Phase::Liquid);
-            map.insert(Material::Sand, Phase::Liquid);
-            map.insert(Material::Bedrock, Phase::Solid);
-            MaterialPhases(map)
+            MaterialPhases(enum_map! {
+            Material::Air => Phase::Gas,
+            Material::Water => Phase::Liquid,
+            Material::Sand => Phase::Liquid,
+            Material::Bedrock => Phase::Solid,
+            })
         })
         .insert_resource(ClearColor(Color::WHITE))
         .insert_resource(ToolState {
