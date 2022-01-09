@@ -2,16 +2,9 @@
 name = "falling-sand"
 version = "0.1.0"
 authors = ["Simon Voordouw <simonvoordouw@gmail.com>"]
-edition = "2018"
-resolver = "2"
+edition = "2021"
 
 [dependencies]
 enum-map = "1.1.1"
 ndarray = "0.15"
-
-[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-bevy = { version = "0.5", features = [ "wayland", "trace" ] }
-
-[target.'cfg(target_arch = "wasm32")'.dependencies]
-bevy = { version = "0.5", default-features = false, features = ["bevy_winit", "render", "png"] }
-bevy_webgl2 = { version = "0.5" }
+bevy = { version = "0.6", features = [ "wayland", "trace" ] }

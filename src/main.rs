@@ -1,9 +1,10 @@
 #[macro_use]
 extern crate enum_map;
 
-use bevy::prelude::*;
 use bevy::reflect::TypeUuid;
 use bevy::render::camera::Camera;
+use bevy::render::render_resource::{Extent3d, TextureFormat};
+use bevy::{prelude::*, render::render_resource::TextureDimension};
 use enum_map::EnumMap;
 use ndarray::{prelude::*, Zip};
 use std::ops::{Deref, DerefMut};
@@ -53,15 +54,16 @@ struct ToolState {
 struct MaterialDensities(EnumMap<Material, u32>);
 struct MaterialPhases(EnumMap<Material, Phase>);
 
+#[derive(Component)]
 pub struct FallingSand {
     cells: Board,
     scratch: Board,
-    texture: Handle<Texture>,
+    texture: Handle<Image>,
     odd_timestep: bool,
 }
 
 impl FallingSand {
-    fn new(width: usize, height: usize, texture: Handle<Texture>) -> Self {
+    fn new(width: usize, height: usize, texture: Handle<Image>) -> Self {
         FallingSand {
             cells: Board::new(width, height),
             scratch: Board::new(width, height),
@@ -70,7 +72,7 @@ impl FallingSand {
         }
     }
 
-    fn new_from_board(board: &Board, texture: Handle<Texture>) -> Self {
+    fn new_from_board(board: &Board, texture: Handle<Image>) -> Self {
         let width = board.nrows();
         let height = board.ncols();
         FallingSand {
@@ -80,20 +82,96 @@ impl FallingSand {
             odd_timestep: false,
         }
     }
+}
 
-    fn gravity(
-        &mut self,
-        material_densities: &MaterialDensities,
-        material_phases: &MaterialPhases,
-    ) {
-        // TODO move this function to gravity_system, without tripping up the borrow checker
+fn main() {
+    let mut app = App::new();
+
+    app.insert_resource(WindowDescriptor {
+        mode: bevy::window::WindowMode::BorderlessFullscreen,
+        ..Default::default()
+    });
+
+    app.add_plugins(DefaultPlugins);
+
+    app.add_startup_system(setup)
+        .add_system(gravity_system)
+        .add_system(grid_system)
+        .add_system(draw_tool_system)
+        .add_system(switch_tool_system)
+        .insert_resource({
+            MaterialDensities(enum_map! {
+            Material::Air => 0,
+            Material::Water => 1,
+            Material::Sand => 2,
+            Material::Bedrock => 3,
+            })
+        })
+        .insert_resource({
+            MaterialPhases(enum_map! {
+            Material::Air => Phase::Gas,
+            Material::Water => Phase::Liquid,
+            Material::Sand => Phase::Liquid,
+            Material::Bedrock => Phase::Solid,
+            })
+        })
+        .insert_resource(ClearColor(Color::WHITE))
+        .insert_resource(ToolState {
+            draw_type: Material::Sand,
+        })
+        .run();
+}
+
+fn setup(mut commands: Commands, mut textures: ResMut<Assets<Image>>) {
+    commands.spawn_bundle(OrthographicCameraBundle::new_2d());
+    dbg!("setting up the board");
+
+    let a = {
+        let mut a = Board::new(100, 100);
+        a.slice_mut(s![10..20, 1]).fill(Material::Sand);
+        a.slice_mut(s![0..99, 99]).fill(Material::Bedrock);
+        a
+    };
+
+    let width = a.nrows();
+    let height = a.ncols();
+
+    let texture = textures.add(Image::new_fill(
+        Extent3d {
+            height: height as u32,
+            width: width as u32,
+            depth_or_array_layers: 1,
+        },
+        TextureDimension::D2,
+        &[0u8, 0u8, 0u8, 255u8],
+        TextureFormat::Rgba8UnormSrgb,
+    ));
+
+    let scale = 8.0;
+
+    commands
+        .spawn_bundle(SpriteBundle {
+            texture: texture.clone(),
+            sprite: Sprite {
+                custom_size: Some(Vec2::new(width as f32, height as f32)),
+                ..Default::default()
+            },
+            transform: Transform::from_scale(Vec3::new(scale, scale, 1.0)),
+            ..Default::default()
+        })
+        .insert(FallingSand::new_from_board(&a, texture));
+}
+
+fn gravity_system(mut grid_query: Query<&mut FallingSand>) {
+    for mut grid in grid_query.iter_mut() {
+        let grid = &mut *grid;
         let (source, target) = {
-            if !self.odd_timestep {
-                (self.cells.view(), self.scratch.view_mut())
+            if !grid.odd_timestep {
+                (grid.cells.view(), grid.scratch.view_mut())
             } else {
                 (
-                    self.cells.slice(s![1..-1, 1..-1]),
-                    self.scratch.slice_mut(s![1..-1, 1..-1]),
+                    grid.cells.slice(s![1..-1, 1..-1]),
+                    grid.scratch.slice_mut(s![1..-1, 1..-1]),
                 )
             }
         };
@@ -199,106 +277,12 @@ impl FallingSand {
                     s.assign(&neigh);
                 }
             });
-        self.cells.assign(&self.scratch);
-        self.odd_timestep = !self.odd_timestep;
+        grid.cells.assign(&grid.scratch);
+        grid.odd_timestep = !grid.odd_timestep;
     }
 }
 
-fn main() {
-    let mut app = App::build();
-
-    app.insert_resource(WindowDescriptor {
-        mode: bevy::window::WindowMode::BorderlessFullscreen,
-        ..Default::default()
-    });
-
-    #[cfg(not(target_arch = "wasm32"))]
-    app.add_plugins(DefaultPlugins);
-
-    #[cfg(target_arch = "wasm32")]
-    app.add_plugins(bevy_webgl2::DefaultPlugins);
-
-    app.add_startup_system(setup.system())
-        .add_system(gravity_system.system())
-        .add_system(grid_system.system())
-        .add_system(draw_tool_system.system())
-        .add_system(switch_tool_system.system())
-        .insert_resource({
-            MaterialDensities(enum_map! {
-            Material::Air => 0,
-            Material::Water => 1,
-            Material::Sand => 2,
-            Material::Bedrock => 3,
-            })
-        })
-        .insert_resource({
-            MaterialPhases(enum_map! {
-            Material::Air => Phase::Gas,
-            Material::Water => Phase::Liquid,
-            Material::Sand => Phase::Liquid,
-            Material::Bedrock => Phase::Solid,
-            })
-        })
-        .insert_resource(ClearColor(Color::WHITE))
-        .insert_resource(ToolState {
-            draw_type: Material::Sand,
-        })
-        .run();
-}
-
-fn setup(
-    mut commands: Commands,
-    mut textures: ResMut<Assets<Texture>>,
-    mut materials: ResMut<Assets<ColorMaterial>>,
-) {
-    commands.spawn_bundle(OrthographicCameraBundle::new_2d());
-    dbg!("setting up the board");
-
-    let a = {
-        let mut a = Board::new(100, 100);
-        a.slice_mut(s![10..20, 1]).fill(Material::Sand);
-        a.slice_mut(s![0..99, 99]).fill(Material::Bedrock);
-        a
-    };
-
-    let width = a.nrows();
-    let height = a.ncols();
-
-    let texture = textures.add(Texture::new_fill(
-        bevy::render::texture::Extent3d::new(height as u32, width as u32, 1u32),
-        bevy::render::texture::TextureDimension::D2,
-        &[0u8, 0u8, 0u8, 255u8],
-        bevy::render::texture::TextureFormat::Rgba8UnormSrgb,
-    ));
-
-    let material = ColorMaterial::texture(texture.clone());
-    //
-    let scale = 8.0;
-
-    commands
-        .spawn_bundle(SpriteBundle {
-            material: materials.add(material),
-            sprite: Sprite {
-                size: Vec2::new(width as f32, height as f32),
-                ..Default::default()
-            },
-            transform: Transform::from_scale(Vec3::new(scale, scale, 1.0)),
-            ..Default::default()
-        })
-        .insert(FallingSand::new_from_board(&a, texture));
-}
-
-fn gravity_system(
-    mut grid_query: Query<&mut FallingSand>,
-    material_densities: Res<MaterialDensities>,
-    material_phases: Res<MaterialPhases>,
-) {
-    for mut grid in grid_query.iter_mut() {
-        grid.gravity(&material_densities, &material_phases);
-    }
-}
-
-fn grid_system(grid_query: Query<&FallingSand>, mut textures: ResMut<Assets<Texture>>) {
+fn grid_system(grid_query: Query<&FallingSand>, mut textures: ResMut<Assets<Image>>) {
     for grid in grid_query.iter() {
         if let Some(texture) = textures.get_mut(&grid.texture) {
             texture.data = grid
