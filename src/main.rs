@@ -1,98 +1,38 @@
 #[macro_use]
 extern crate enum_map;
 
-use bevy::reflect::TypeUuid;
 use bevy::render::camera::Camera;
 use bevy::render::render_resource::{Extent3d, TextureFormat};
 use bevy::{prelude::*, render::render_resource::TextureDimension};
-use enum_map::EnumMap;
-use ndarray::{prelude::*, Zip};
-use std::ops::{Deref, DerefMut};
+use ndarray::prelude::*;
+use types::{MaterialDensities, ToolState};
 
-#[derive(Debug, TypeUuid, Clone)]
-#[uuid = "3e6c203c-76a0-4acc-a812-8d48ee685e61"]
-struct Board(pub Array2<Material>);
+use crate::falling_sand::{grid_system, FallingSand};
+use crate::grid::Board;
+use crate::{
+    margolus::gravity_system,
+    types::{Material, MaterialPhases, Phase},
+};
 
-impl Board {
-    pub fn new(width: usize, height: usize) -> Board {
-        Board(Array2::from_elem((width, height), Material::Air))
-    }
-}
-
-impl Deref for Board {
-    type Target = Array2<Material>;
-    fn deref(&self) -> &Array2<Material> {
-        &self.0
-    }
-}
-
-impl DerefMut for Board {
-    fn deref_mut(&mut self) -> &mut Array2<Material> {
-        &mut self.0
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Enum)]
-enum Material {
-    Bedrock,
-    Air,
-    Sand,
-    Water,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Enum)]
-enum Phase {
-    Solid,
-    Liquid,
-    Gas,
-}
-
-struct ToolState {
-    draw_type: Material,
-}
-
-struct MaterialDensities(EnumMap<Material, u32>);
-struct MaterialPhases(EnumMap<Material, Phase>);
-
-#[derive(Component)]
-pub struct FallingSand {
-    cells: Board,
-    scratch: Board,
-    texture: Handle<Image>,
-    odd_timestep: bool,
-}
-
-impl FallingSand {
-    fn new(width: usize, height: usize, texture: Handle<Image>) -> Self {
-        FallingSand {
-            cells: Board::new(width, height),
-            scratch: Board::new(width, height),
-            texture,
-            odd_timestep: false,
-        }
-    }
-
-    fn new_from_board(board: &Board, texture: Handle<Image>) -> Self {
-        let width = board.nrows();
-        let height = board.ncols();
-        FallingSand {
-            cells: board.clone(),
-            scratch: Board::new(width, height),
-            texture,
-            odd_timestep: false,
-        }
-    }
-}
+mod falling_sand;
+mod grid;
+mod margolus;
+mod types;
 
 fn main() {
     let mut app = App::new();
 
-    app.insert_resource(WindowDescriptor {
-        mode: bevy::window::WindowMode::BorderlessFullscreen,
-        ..Default::default()
-    });
-
-    app.add_plugins(DefaultPlugins);
+    app.add_plugins(
+        DefaultPlugins
+            .set(WindowPlugin {
+                window: WindowDescriptor {
+                    mode: bevy::window::WindowMode::BorderlessFullscreen,
+                    ..Default::default()
+                },
+                ..default()
+            })
+            .set(ImagePlugin::default_nearest()),
+    );
 
     app.add_startup_system(setup)
         .add_system(gravity_system)
@@ -123,7 +63,7 @@ fn main() {
 }
 
 fn setup(mut commands: Commands, mut textures: ResMut<Assets<Image>>) {
-    commands.spawn_bundle(OrthographicCameraBundle::new_2d());
+    commands.spawn(Camera2dBundle::default());
     dbg!("setting up the board");
 
     let a = {
@@ -150,7 +90,7 @@ fn setup(mut commands: Commands, mut textures: ResMut<Assets<Image>>) {
     let scale = 8.0;
 
     commands
-        .spawn_bundle(SpriteBundle {
+        .spawn(SpriteBundle {
             texture: texture.clone(),
             sprite: Sprite {
                 custom_size: Some(Vec2::new(width as f32, height as f32)),
@@ -160,144 +100,6 @@ fn setup(mut commands: Commands, mut textures: ResMut<Assets<Image>>) {
             ..Default::default()
         })
         .insert(FallingSand::new_from_board(&a, texture));
-}
-
-fn gravity_system(mut grid_query: Query<&mut FallingSand>) {
-    for mut grid in grid_query.iter_mut() {
-        let grid = &mut *grid;
-        let (source, target) = {
-            if !grid.odd_timestep {
-                (grid.cells.view(), grid.scratch.view_mut())
-            } else {
-                (
-                    grid.cells.slice(s![1..-1, 1..-1]),
-                    grid.scratch.slice_mut(s![1..-1, 1..-1]),
-                )
-            }
-        };
-
-        // Method from: https://ir.cwi.nl/pub/4545
-
-        Zip::from(target.reversed_axes().exact_chunks_mut((2, 2)))
-            .and(source.reversed_axes().exact_chunks((2, 2)))
-            .for_each(|mut s, neigh| {
-                if neigh.iter().all(|material| *material == Material::Air) {
-                    s.assign(&neigh);
-                } else if neigh
-                    == arr2(&[
-                        [Material::Sand, Material::Air],
-                        [Material::Air, Material::Air],
-                    ])
-                {
-                    s.assign(&arr2(&[
-                        [Material::Air, Material::Air],
-                        [Material::Sand, Material::Air],
-                    ]));
-                } else if neigh
-                    == arr2(&[
-                        [Material::Air, Material::Sand],
-                        [Material::Air, Material::Air],
-                    ])
-                {
-                    s.assign(&arr2(&[
-                        [Material::Air, Material::Air],
-                        [Material::Air, Material::Sand],
-                    ]));
-                } else if neigh
-                    == arr2(&[
-                        [Material::Sand, Material::Sand],
-                        [Material::Air, Material::Air],
-                    ])
-                {
-                    s.assign(&arr2(&[
-                        [Material::Air, Material::Air],
-                        [Material::Sand, Material::Sand],
-                    ]));
-                } else if neigh
-                    == arr2(&[
-                        [Material::Sand, Material::Air],
-                        [Material::Air, Material::Sand],
-                    ])
-                {
-                    s.assign(&arr2(&[
-                        [Material::Air, Material::Air],
-                        [Material::Sand, Material::Sand],
-                    ]));
-                } else if neigh
-                    == arr2(&[
-                        [Material::Air, Material::Sand],
-                        [Material::Sand, Material::Air],
-                    ])
-                {
-                    s.assign(&arr2(&[
-                        [Material::Air, Material::Air],
-                        [Material::Sand, Material::Sand],
-                    ]));
-                } else if neigh
-                    == arr2(&[
-                        [Material::Sand, Material::Air],
-                        [Material::Sand, Material::Air],
-                    ])
-                {
-                    s.assign(&arr2(&[
-                        [Material::Air, Material::Air],
-                        [Material::Sand, Material::Sand],
-                    ]));
-                } else if neigh
-                    == arr2(&[
-                        [Material::Air, Material::Sand],
-                        [Material::Air, Material::Sand],
-                    ])
-                {
-                    s.assign(&arr2(&[
-                        [Material::Air, Material::Air],
-                        [Material::Sand, Material::Sand],
-                    ]));
-                } else if neigh
-                    == arr2(&[
-                        [Material::Sand, Material::Sand],
-                        [Material::Air, Material::Sand],
-                    ])
-                {
-                    s.assign(&arr2(&[
-                        [Material::Air, Material::Sand],
-                        [Material::Sand, Material::Sand],
-                    ]));
-                } else if neigh
-                    == arr2(&[
-                        [Material::Sand, Material::Sand],
-                        [Material::Sand, Material::Air],
-                    ])
-                {
-                    s.assign(&arr2(&[
-                        [Material::Sand, Material::Air],
-                        [Material::Sand, Material::Sand],
-                    ]));
-                } else {
-                    s.assign(&neigh);
-                }
-            });
-        grid.cells.assign(&grid.scratch);
-        grid.odd_timestep = !grid.odd_timestep;
-    }
-}
-
-fn grid_system(grid_query: Query<&FallingSand>, mut textures: ResMut<Assets<Image>>) {
-    for grid in grid_query.iter() {
-        if let Some(texture) = textures.get_mut(&grid.texture) {
-            texture.data = grid
-                .cells
-                .t()
-                .iter()
-                .flat_map(|cell| match *cell {
-                    Material::Sand => [244, 215, 21, 255u8],
-                    Material::Water => [255, 0, 0, 255u8],
-                    Material::Bedrock => [77, 77, 77, 255u8],
-                    _ => [255u8, 255u8, 255u8, 255u8],
-                })
-                .collect();
-        }
-    }
 }
 
 fn switch_tool_system(mut tool_state: ResMut<ToolState>, keyboard_input: Res<Input<KeyCode>>) {
@@ -365,7 +167,8 @@ fn get_tile_position_under_cursor(
     grid_size: (usize, usize),
     tile_size: u32,
 ) -> (i32, i32) {
-    let translation = (camera_transform.mul_vec3(cursor_position)) - tilemap_transform.translation;
+    let translation =
+        camera_transform.translation() + cursor_position - tilemap_transform.translation();
     let point_x = translation.x / tile_size as f32;
     let point_y = translation.y / tile_size as f32;
     (

@@ -4,7 +4,16 @@ version = "0.1.0"
 authors = ["Simon Voordouw <simonvoordouw@gmail.com>"]
 edition = "2021"
 
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[profile.release]
+lto = true
+
+[target.'cfg(target_arch = "wasm32")'.profile.release]
+opt-level = "z"
+
 [dependencies]
-enum-map = "1.1.1"
-ndarray = "0.15"
-bevy = { version = "0.6", features = [ "wayland", "trace" ] }
+iyes_loopless = "0.7.1"
+bevy = "0.9"
+ndarray = "0.15.6"
+enum-map = "2.4.1"
