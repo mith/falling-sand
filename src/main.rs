@@ -3,12 +3,15 @@ extern crate enum_map;
 
 use bevy::render::camera::Camera;
 use bevy::render::render_resource::{Extent3d, TextureFormat};
+use bevy::sprite::Material2dPlugin;
 use bevy::{prelude::*, render::render_resource::TextureDimension};
+use falling_sand::{grid_system, GridMaterial};
+use margolus::Margulos;
 use ndarray::prelude::*;
 use types::{MaterialDensities, ToolState};
 
-use crate::falling_sand::{grid_system, FallingSand};
-use crate::grid::Board;
+use crate::falling_sand::FallingSand;
+use crate::grid::Grid;
 use crate::{
     margolus::gravity_system,
     types::{Material, MaterialPhases, Phase},
@@ -26,7 +29,7 @@ fn main() {
         DefaultPlugins
             .set(WindowPlugin {
                 window: WindowDescriptor {
-                    mode: bevy::window::WindowMode::BorderlessFullscreen,
+                    // mode: bevy::window::WindowMode::BorderlessFullscreen,
                     ..Default::default()
                 },
                 ..default()
@@ -34,11 +37,15 @@ fn main() {
             .set(ImagePlugin::default_nearest()),
     );
 
+    app.add_plugin(Material2dPlugin::<GridMaterial>::default());
+
     app.add_startup_system(setup)
-        .add_system(gravity_system)
+        .add_startup_system(falling_sand::setup)
         .add_system(grid_system)
+        .add_system(gravity_system)
         .add_system(draw_tool_system)
         .add_system(switch_tool_system)
+        .insert_resource(Margulos::default())
         .insert_resource({
             MaterialDensities(enum_map! {
             Material::Air => 0,
@@ -62,44 +69,8 @@ fn main() {
         .run();
 }
 
-fn setup(mut commands: Commands, mut textures: ResMut<Assets<Image>>) {
+fn setup(mut commands: Commands) {
     commands.spawn(Camera2dBundle::default());
-    dbg!("setting up the board");
-
-    let a = {
-        let mut a = Board::new(100, 100);
-        a.slice_mut(s![10..20, 1]).fill(Material::Sand);
-        a.slice_mut(s![0..99, 99]).fill(Material::Bedrock);
-        a
-    };
-
-    let width = a.nrows();
-    let height = a.ncols();
-
-    let texture = textures.add(Image::new_fill(
-        Extent3d {
-            height: height as u32,
-            width: width as u32,
-            depth_or_array_layers: 1,
-        },
-        TextureDimension::D2,
-        &[0u8, 0u8, 0u8, 255u8],
-        TextureFormat::Rgba8UnormSrgb,
-    ));
-
-    let scale = 8.0;
-
-    commands
-        .spawn(SpriteBundle {
-            texture: texture.clone(),
-            sprite: Sprite {
-                custom_size: Some(Vec2::new(width as f32, height as f32)),
-                ..Default::default()
-            },
-            transform: Transform::from_scale(Vec3::new(scale, scale, 1.0)),
-            ..Default::default()
-        })
-        .insert(FallingSand::new_from_board(&a, texture));
 }
 
 fn switch_tool_system(mut tool_state: ResMut<ToolState>, keyboard_input: Res<Input<KeyCode>>) {

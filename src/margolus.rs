@@ -4,11 +4,16 @@ use ndarray::{arr2, s, Zip};
 use crate::falling_sand::FallingSand;
 use crate::types::Material;
 
-pub fn gravity_system(mut grid_query: Query<&mut FallingSand>) {
+#[derive(Resource, Default)]
+pub struct Margulos {
+    pub odd_timestep: bool,
+}
+
+pub fn gravity_system(mut grid_query: Query<&mut FallingSand>, mut margolus: ResMut<Margulos>) {
     for mut grid in grid_query.iter_mut() {
         let grid = &mut *grid;
         let (source, target) = {
-            if !grid.odd_timestep {
+            if !margolus.odd_timestep {
                 (grid.cells.view(), grid.scratch.view_mut())
             } else {
                 (
@@ -120,6 +125,6 @@ pub fn gravity_system(mut grid_query: Query<&mut FallingSand>) {
                 }
             });
         grid.cells.assign(&grid.scratch);
-        grid.odd_timestep = !grid.odd_timestep;
+        margolus.odd_timestep = !margolus.odd_timestep;
     }
 }
