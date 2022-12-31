@@ -2,16 +2,16 @@
 extern crate enum_map;
 
 use bevy::render::camera::Camera;
-use bevy::render::render_resource::{Extent3d, TextureFormat};
-use bevy::sprite::Material2dPlugin;
-use bevy::{prelude::*, render::render_resource::TextureDimension};
-use falling_sand::{grid_system, GridMaterial};
+
+use bevy::prelude::*;
+
+use falling_sand::FallingSandPlugin;
 use margolus::Margulos;
-use ndarray::prelude::*;
+
 use types::{MaterialDensities, ToolState};
 
 use crate::falling_sand::FallingSand;
-use crate::grid::Grid;
+
 use crate::{
     margolus::gravity_system,
     types::{Material, MaterialPhases, Phase},
@@ -37,11 +37,9 @@ fn main() {
             .set(ImagePlugin::default_nearest()),
     );
 
-    app.add_plugin(Material2dPlugin::<GridMaterial>::default());
+    app.add_plugin(FallingSandPlugin);
 
     app.add_startup_system(setup)
-        .add_startup_system(falling_sand::setup)
-        .add_system(grid_system)
         .add_system(gravity_system)
         .add_system(draw_tool_system)
         .add_system(switch_tool_system)

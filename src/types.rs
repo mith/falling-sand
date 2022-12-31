@@ -4,7 +4,7 @@ use bytemuck::NoUninit;
 use enum_map::EnumMap;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Enum, NoUninit)]
-#[repr(u8)]
+#[repr(u32)]
 pub enum Material {
     Air = 0,
     Bedrock = 1,
