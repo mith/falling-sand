@@ -5,7 +5,7 @@ use bevy::render::camera::Camera;
 
 use bevy::prelude::*;
 
-use falling_sand::FallingSandPlugin;
+use falling_sand::{FallingSandPlugin, FallingSandSettings};
 use margolus::Margulos;
 
 use types::{MaterialDensities, ToolState};
@@ -86,6 +86,7 @@ fn draw_tool_system(
     mouse_button_input: Res<Input<MouseButton>>,
     camera_transforms: Query<&GlobalTransform, With<Camera>>,
     tool_state: Res<ToolState>,
+    falling_sand_settings: Res<FallingSandSettings>,
 ) {
     let maybe_window: Option<Vec3> = windows.get_primary().and_then(|window| {
         window.cursor_position().map(|cursor_position| {
@@ -113,7 +114,7 @@ fn draw_tool_system(
                 camera_transform,
                 grid_transform,
                 (grid.cells.nrows(), grid.cells.ncols()),
-                8,
+                falling_sand_settings.tile_size,
             );
             if tile_position.0 > 0 && tile_position.1 > 0 {
                 if let Some(cell) = grid

@@ -24,7 +24,7 @@ use crate::types::Material;
 pub struct FallingSand {
     pub cells: Grid,
     pub scratch: Grid,
-    pub texture: Handle<Image>,
+    pub materials_texture: Handle<Image>,
     pub color_map: Handle<Image>,
 }
 
@@ -38,7 +38,7 @@ impl FallingSand {
         FallingSand {
             cells: Grid::new(width, height),
             scratch: Grid::new(width, height),
-            texture,
+            materials_texture: texture,
             color_map,
         }
     }
@@ -49,21 +49,24 @@ impl FallingSand {
         FallingSand {
             cells: board.clone(),
             scratch: Grid::new(width, height),
-            texture,
+            materials_texture: texture,
             color_map,
         }
+    }
+
+    pub fn size(&self) -> (usize, usize) {
+        (self.cells.nrows(), self.cells.ncols())
     }
 }
 
 pub fn grid_system(falling_sand: Query<&FallingSand>, mut textures: ResMut<Assets<Image>>) {
-    for grid in &falling_sand {
-        if let Some(texture) = textures.get_mut(&grid.texture) {
-            let shape = (100, 100);
-            let material_slice: &mut [u32] = cast_slice_mut(texture.data.as_mut_slice());
-            if let Ok(mut texture_grid) = ArrayViewMut::from_shape(shape, material_slice) {
+    for falling_sand in &falling_sand {
+        if let Some(materials_texture) = textures.get_mut(&falling_sand.materials_texture) {
+            let shape = falling_sand.cells.shape();
+            let material_slice: &mut [u32] = cast_slice_mut(materials_texture.data.as_mut_slice());
+            if let Ok(mut materials_array) = ArrayViewMut::from_shape(shape, material_slice) {
                 debug!("Uploading grid state to texture");
-                texture_grid.assign(&grid.cells.t().mapv(|c| c as u32));
-                // texture_grid.fill(2u8);
+                materials_array.assign(&falling_sand.cells.t().mapv(|c| c as u32));
             }
         }
     }
@@ -73,7 +76,13 @@ pub struct FallingSandPlugin;
 
 impl Plugin for FallingSandPlugin {
     fn build(&self, app: &mut App) {
+        let settings = FallingSandSettings {
+            size: (200, 200),
+            tile_size: 4,
+        };
         app.add_plugin(ExtractResourcePlugin::<FallingSandImages>::default())
+            .add_plugin(ExtractResourcePlugin::<FallingSandSettings>::default())
+            .insert_resource(settings)
             .add_startup_system(setup)
             .add_system(grid_system);
 
@@ -84,12 +93,21 @@ impl Plugin for FallingSandPlugin {
 
         let mut render_graph = render_app.world.resource_mut::<render_graph::RenderGraph>();
         render_graph.add_node("falling_sand", FallingSandNode::default());
-        render_graph.add_node_edge(
-            "falling_sand",
-            bevy::render::main_graph::node::CAMERA_DRIVER,
-        );
+        render_graph
+            .add_node_edge(
+                "falling_sand",
+                bevy::render::main_graph::node::CAMERA_DRIVER,
+            )
+            .expect("Failed to add falling_sand node to render graph");
     }
 }
+
+#[derive(Resource, Clone, ExtractResource)]
+pub struct FallingSandSettings {
+    pub size: (usize, usize),
+    pub tile_size: u32,
+}
+
 #[derive(Resource, Clone, ExtractResource)]
 struct FallingSandImages {
     pub grid_texture: Handle<Image>,
@@ -201,7 +219,9 @@ impl FromWorld for FallingSandPipeline {
 }
 
 #[derive(Default)]
-struct FallingSandNode;
+struct FallingSandNode {
+    size: (usize, usize),
+}
 
 impl render_graph::Node for FallingSandNode {
     fn run(
@@ -224,16 +244,34 @@ impl render_graph::Node for FallingSandNode {
             .get_compute_pipeline(pipeline.update_pipeline)
             .unwrap();
         pass.set_pipeline(update_pipeline);
-        pass.dispatch_workgroups(10, 10, 1);
+
+        let size = (self.size.0 as u32, self.size.1 as u32);
+        let workgroup_size = 10;
+        pass.dispatch_workgroups(size.0 / workgroup_size, size.1 / workgroup_size, 1);
+
         Ok(())
+    }
+
+    fn update(&mut self, _world: &mut World) {
+        let falling_sand_settings = _world.resource::<FallingSandSettings>();
+
+        self.size = falling_sand_settings.size;
     }
 }
 
-pub fn setup(mut commands: Commands, mut images: ResMut<Assets<Image>>) {
+pub fn setup(
+    mut commands: Commands,
+    mut images: ResMut<Assets<Image>>,
+    falling_sand_settings: Res<FallingSandSettings>,
+) {
+    let size = (
+        falling_sand_settings.size.0 as u32,
+        falling_sand_settings.size.1 as u32,
+    );
     let mut grid_image = Image::new_fill(
         Extent3d {
-            height: 100,
-            width: 100,
+            width: size.0,
+            height: size.1,
             depth_or_array_layers: 1,
         },
         TextureDimension::D2,
@@ -271,8 +309,8 @@ pub fn setup(mut commands: Commands, mut images: ResMut<Assets<Image>>) {
 
     let mut color_image = Image::new_fill(
         Extent3d {
-            height: 100,
-            width: 100,
+            width: size.0,
+            height: size.1,
             depth_or_array_layers: 1,
         },
         TextureDimension::D2,
@@ -285,9 +323,10 @@ pub fn setup(mut commands: Commands, mut images: ResMut<Assets<Image>>) {
     let grid_texture = images.add(grid_image);
     let color_map_image = images.add(color_map_image);
     let color_image = images.add(color_image);
+    let scale = falling_sand_settings.tile_size;
     commands.spawn(SpriteBundle {
         sprite: Sprite {
-            custom_size: Some(Vec2::new(800., 800.)),
+            custom_size: Some(Vec2::new((size.0 * scale) as f32, (size.1 * scale) as f32)),
             ..default()
         },
         texture: color_image.clone(),
@@ -295,7 +334,7 @@ pub fn setup(mut commands: Commands, mut images: ResMut<Assets<Image>>) {
     });
 
     let board = {
-        let mut grid = Grid::new(100, 100);
+        let mut grid = Grid::new(size.0 as usize, size.1 as usize);
         info!("Setting initial grid state");
         grid.slice_mut(s![10..20, 1]).fill(Material::Sand);
         grid.slice_mut(s![0..99, 99]).fill(Material::Bedrock);
