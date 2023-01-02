@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 
-use bytemuck::NoUninit;
+use bytemuck::{Contiguous, NoUninit};
 use enum_map::EnumMap;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Enum, NoUninit)]
@@ -10,6 +10,13 @@ pub enum Material {
     Bedrock = 1,
     Sand = 2,
     Water = 3,
+}
+
+unsafe impl Contiguous for Material {
+    type Int = u32;
+
+    const MIN_VALUE: Self::Int = 0;
+    const MAX_VALUE: Self::Int = 3;
 }
 
 impl From<u8> for Material {

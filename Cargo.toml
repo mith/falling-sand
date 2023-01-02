@@ -23,4 +23,4 @@ iyes_loopless = "0.7.1"
 bevy = "0.9"
 ndarray = "0.15.6"
 enum-map = "2.4.1"
-bytemuck = "1.12.3"
+bytemuck = { version = "1.12.3", features = ["derive"] }

@@ -14,8 +14,8 @@ use bevy::render::renderer::RenderDevice;
 use bevy::render::texture::TextureFormatPixelInfo;
 use bevy::render::{render_graph, RenderApp, RenderStage};
 
-use bytemuck::cast_slice_mut;
-use ndarray::{s, ArrayViewMut};
+use bytemuck::cast_slice;
+use ndarray::s;
 
 use crate::grid::Grid;
 use crate::types::Material;
@@ -62,12 +62,12 @@ impl FallingSand {
 pub fn grid_system(falling_sand: Query<&FallingSand>, mut textures: ResMut<Assets<Image>>) {
     for falling_sand in &falling_sand {
         if let Some(materials_texture) = textures.get_mut(&falling_sand.materials_texture) {
-            let shape = falling_sand.cells.shape();
-            let material_slice: &mut [u32] = cast_slice_mut(materials_texture.data.as_mut_slice());
-            if let Ok(mut materials_array) = ArrayViewMut::from_shape(shape, material_slice) {
-                debug!("Uploading grid state to texture");
-                materials_array.assign(&falling_sand.cells.t().mapv(|c| c as u32));
-            }
+            materials_texture.data.copy_from_slice(cast_slice(
+                falling_sand
+                    .cells
+                    .as_slice()
+                    .expect("Failed to get slice from grid"),
+            ));
         }
     }
 }
@@ -324,14 +324,6 @@ pub fn setup(
     let color_map_image = images.add(color_map_image);
     let color_image = images.add(color_image);
     let scale = falling_sand_settings.tile_size;
-    commands.spawn(SpriteBundle {
-        sprite: Sprite {
-            custom_size: Some(Vec2::new((size.0 * scale) as f32, (size.1 * scale) as f32)),
-            ..default()
-        },
-        texture: color_image.clone(),
-        ..default()
-    });
 
     let board = {
         let mut grid = Grid::new(size.0 as usize, size.1 as usize);
@@ -341,8 +333,18 @@ pub fn setup(
         grid
     };
     commands.spawn((
+        SpriteBundle {
+            sprite: Sprite {
+                custom_size: Some(Vec2::new((size.0 * scale) as f32, (size.1 * scale) as f32)),
+                // flip_x: false,
+                flip_y: true,
+                ..default()
+            },
+            texture: color_image.clone(),
+            transform: Transform::from_rotation(Quat::from_rotation_z(-std::f32::consts::PI / 2.0)),
+            ..default()
+        },
         FallingSand::new_from_board(&board, grid_texture.clone(), color_map_image.clone()),
-        TransformBundle::default(),
     ));
 
     commands.insert_resource(FallingSandImages {
