@@ -131,7 +131,7 @@ pub fn gravity_system(
             }
         };
 
-        margolus_gravity(source, target);
+        margolus_gravity(source, target, falling_sand_settings.parallel_gravity);
         margolus.odd_timestep = !margolus.odd_timestep;
     }
 }
@@ -214,6 +214,7 @@ pub struct FallingSandSettings {
     pub size: (usize, usize),
     pub tile_size: u32,
     pub border_update_mode: BorderUpdateMode,
+    pub parallel_gravity: bool,
 }
 
 impl Default for FallingSandSettings {
@@ -222,6 +223,7 @@ impl Default for FallingSandSettings {
             size: (500, 500),
             tile_size: 2,
             border_update_mode: BorderUpdateMode::CopyBorder,
+            parallel_gravity: true,
         }
     }
 }
