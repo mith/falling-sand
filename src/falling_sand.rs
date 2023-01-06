@@ -14,57 +14,135 @@ use bevy::render::renderer::RenderDevice;
 use bevy::render::texture::TextureFormatPixelInfo;
 use bevy::render::{render_graph, RenderApp, RenderStage};
 
+use bevy_inspector_egui::Inspectable;
 use bytemuck::cast_slice;
 use ndarray::s;
 
 use crate::grid::Grid;
-use crate::types::Material;
+use crate::margolus::{margolus_gravity, MargulosState};
+use crate::types::{Material, MaterialDensities, MaterialPhases, Phase};
+
+pub struct DoubleBuffered<T> {
+    pub odd: T,
+    pub even: T,
+    target_is_odd: bool,
+}
+
+impl<T> DoubleBuffered<T> {
+    pub fn new(odd: T, even: T) -> Self {
+        DoubleBuffered {
+            odd,
+            even,
+            target_is_odd: false,
+        }
+    }
+    pub fn source(&self) -> &T {
+        if self.target_is_odd {
+            &self.even
+        } else {
+            &self.odd
+        }
+    }
+
+    pub fn target(&self) -> &T {
+        if self.target_is_odd {
+            &self.odd
+        } else {
+            &self.even
+        }
+    }
+
+    pub fn target_mut(&mut self) -> &mut T {
+        if self.target_is_odd {
+            &mut self.odd
+        } else {
+            &mut self.even
+        }
+    }
+
+    pub fn source_and_target_mut(&mut self) -> (&T, &mut T) {
+        if self.target_is_odd {
+            (&self.even, &mut self.odd)
+        } else {
+            (&self.odd, &mut self.even)
+        }
+    }
+
+    pub fn swap(&mut self) {
+        self.target_is_odd = !self.target_is_odd;
+    }
+}
 
 #[derive(Component)]
 pub struct FallingSand {
-    pub cells: Grid,
-    pub scratch: Grid,
+    pub cells: DoubleBuffered<Grid>,
     pub materials_texture: Handle<Image>,
     pub color_map: Handle<Image>,
 }
 
 impl FallingSand {
-    pub fn new(
-        width: usize,
-        height: usize,
-        texture: Handle<Image>,
-        color_map: Handle<Image>,
-    ) -> Self {
-        FallingSand {
-            cells: Grid::new(width, height),
-            scratch: Grid::new(width, height),
-            materials_texture: texture,
-            color_map,
-        }
-    }
-
     pub fn new_from_board(board: &Grid, texture: Handle<Image>, color_map: Handle<Image>) -> Self {
-        let width = board.nrows();
-        let height = board.ncols();
         FallingSand {
-            cells: board.clone(),
-            scratch: Grid::new(width, height),
+            cells: DoubleBuffered::new(board.clone(), board.clone()),
             materials_texture: texture,
             color_map,
         }
     }
 
     pub fn size(&self) -> (usize, usize) {
-        (self.cells.nrows(), self.cells.ncols())
+        (self.cells.target().nrows(), self.cells.target().ncols())
     }
 }
 
-pub fn grid_system(falling_sand: Query<&FallingSand>, mut textures: ResMut<Assets<Image>>) {
+pub fn gravity_system(
+    mut grid_query: Query<&mut FallingSand>,
+    mut margolus: ResMut<MargulosState>,
+    falling_sand_settings: Res<FallingSandSettings>,
+) {
+    for mut grid in grid_query.iter_mut() {
+        grid.cells.swap();
+        let (source, target) = {
+            if margolus.odd_timestep {
+                let (source, target) = grid.cells.source_and_target_mut();
+
+                // Copy the border from the source to the target first
+                match &falling_sand_settings.border_update_mode {
+                    BorderUpdateMode::CopyEntireSource => {
+                        target.assign(&source);
+                    }
+                    BorderUpdateMode::CopyBorder => {
+                        target.slice_mut(s![0, ..]).assign(&source.slice(s![0, ..]));
+                        target
+                            .slice_mut(s![-1, ..])
+                            .assign(&source.slice(s![-1, ..]));
+                        target.slice_mut(s![.., 0]).assign(&source.slice(s![.., 0]));
+                        target
+                            .slice_mut(s![.., -1])
+                            .assign(&source.slice(s![.., -1]));
+                    }
+                };
+                (
+                    source.slice(s![1..-1, 1..-1]),
+                    target.slice_mut(s![1..-1, 1..-1]),
+                )
+            } else {
+                let (source, target) = grid.cells.source_and_target_mut();
+                (source.view(), target.view_mut())
+            }
+        };
+
+        margolus_gravity(source, target);
+        margolus.odd_timestep = !margolus.odd_timestep;
+    }
+}
+
+pub fn grid_to_texture(falling_sand: Query<&FallingSand>, mut textures: ResMut<Assets<Image>>) {
     for falling_sand in &falling_sand {
         if let Some(materials_texture) = textures.get_mut(&falling_sand.materials_texture) {
             materials_texture.data.copy_from_slice(cast_slice(
                 falling_sand
                     .cells
+                    .target()
                     .as_slice()
                     .expect("Failed to get slice from grid"),
             ));
@@ -72,19 +150,42 @@ pub fn grid_system(falling_sand: Query<&FallingSand>, mut textures: ResMut<Asset
     }
 }
 
-pub struct FallingSandPlugin;
+pub struct FallingSandPlugin {
+    pub settings: FallingSandSettings,
+}
+
+#[derive(SystemLabel)]
+pub struct FallingSandPhase;
 
 impl Plugin for FallingSandPlugin {
     fn build(&self, app: &mut App) {
-        let settings = FallingSandSettings {
-            size: (200, 200),
-            tile_size: 4,
-        };
         app.add_plugin(ExtractResourcePlugin::<FallingSandImages>::default())
             .add_plugin(ExtractResourcePlugin::<FallingSandSettings>::default())
-            .insert_resource(settings)
+            .insert_resource(self.settings.clone())
+            .init_resource::<MargulosState>()
+            .insert_resource({
+                MaterialDensities(enum_map! {
+                Material::Air => 0,
+                Material::Water => 1,
+                Material::Sand => 2,
+                Material::Bedrock => 3,
+                })
+            })
+            .insert_resource({
+                MaterialPhases(enum_map! {
+                Material::Air => Phase::Gas,
+                Material::Water => Phase::Liquid,
+                Material::Sand => Phase::Liquid,
+                Material::Bedrock => Phase::Solid,
+                })
+            })
             .add_startup_system(setup)
-            .add_system(grid_system);
+            .add_system_set(
+                SystemSet::new()
+                    .label(FallingSandPhase)
+                    .with_system(gravity_system)
+                    .with_system(grid_to_texture.after(gravity_system)),
+            );
 
         let render_app = app.sub_app_mut(RenderApp);
         render_app
@@ -102,10 +203,27 @@ impl Plugin for FallingSandPlugin {
     }
 }
 
-#[derive(Resource, Clone, ExtractResource)]
+#[derive(Clone, Reflect, Inspectable)]
+pub enum BorderUpdateMode {
+    CopyEntireSource,
+    CopyBorder,
+}
+
+#[derive(Resource, Clone, ExtractResource, Reflect, Inspectable)]
 pub struct FallingSandSettings {
     pub size: (usize, usize),
     pub tile_size: u32,
+    pub border_update_mode: BorderUpdateMode,
+}
+
+impl Default for FallingSandSettings {
+    fn default() -> Self {
+        FallingSandSettings {
+            size: (500, 500),
+            tile_size: 2,
+            border_update_mode: BorderUpdateMode::CopyBorder,
+        }
+    }
 }
 
 #[derive(Resource, Clone, ExtractResource)]
@@ -115,13 +233,13 @@ struct FallingSandImages {
     pub color_texture: Handle<Image>,
 }
 
-#[derive(Resource)]
+#[derive(Resource, Deref, DerefMut)]
 struct FallingSandImagesBindGroup(BindGroup);
 
 #[derive(Resource)]
 pub struct FallingSandPipeline {
     texture_bind_group_layout: BindGroupLayout,
-    update_pipeline: CachedComputePipelineId,
+    render_pipeline: CachedComputePipelineId,
 }
 
 fn queue_bind_group(
@@ -213,7 +331,7 @@ impl FromWorld for FallingSandPipeline {
 
         FallingSandPipeline {
             texture_bind_group_layout,
-            update_pipeline,
+            render_pipeline: update_pipeline,
         }
     }
 }
@@ -226,11 +344,11 @@ struct FallingSandNode {
 impl render_graph::Node for FallingSandNode {
     fn run(
         &self,
-        graph: &mut render_graph::RenderGraphContext,
+        _graph: &mut render_graph::RenderGraphContext,
         render_context: &mut bevy::render::renderer::RenderContext,
         world: &World,
     ) -> Result<(), render_graph::NodeRunError> {
-        let texture_bind_group = &world.resource::<FallingSandImagesBindGroup>().0;
+        let texture_bind_group = &world.resource::<FallingSandImagesBindGroup>();
         let pipeline_cache = world.resource::<PipelineCache>();
         let pipeline = world.resource::<FallingSandPipeline>();
 
@@ -241,7 +359,7 @@ impl render_graph::Node for FallingSandNode {
         pass.set_bind_group(0, texture_bind_group, &[]);
 
         let update_pipeline = pipeline_cache
-            .get_compute_pipeline(pipeline.update_pipeline)
+            .get_compute_pipeline(pipeline.render_pipeline)
             .unwrap();
         pass.set_pipeline(update_pipeline);
 
@@ -268,6 +386,15 @@ pub fn setup(
         falling_sand_settings.size.0 as u32,
         falling_sand_settings.size.1 as u32,
     );
+
+    let board = {
+        let mut grid = Grid::new(size.0 as usize, size.1 as usize);
+        info!("Setting initial grid state");
+        grid.slice_mut(s![10..20, 1]).fill(Material::Sand);
+        grid.slice_mut(s![0..99, 99]).fill(Material::Bedrock);
+        grid
+    };
+
     let mut grid_image = Image::new_fill(
         Extent3d {
             width: size.0,
@@ -286,6 +413,10 @@ pub fn setup(
     grid_image.texture_descriptor.usage =
         TextureUsages::COPY_DST | TextureUsages::STORAGE_BINDING | TextureUsages::TEXTURE_BINDING;
     grid_image.texture_descriptor.label = Some("grid_texture");
+
+    grid_image.data.copy_from_slice(cast_slice(
+        board.as_slice().expect("Failed to get grid data"),
+    ));
 
     let material_colors = vec![
         255u8, 255u8, 255u8, 255u8, // Air
@@ -325,13 +456,6 @@ pub fn setup(
     let color_image = images.add(color_image);
     let scale = falling_sand_settings.tile_size;
 
-    let board = {
-        let mut grid = Grid::new(size.0 as usize, size.1 as usize);
-        info!("Setting initial grid state");
-        grid.slice_mut(s![10..20, 1]).fill(Material::Sand);
-        grid.slice_mut(s![0..99, 99]).fill(Material::Bedrock);
-        grid
-    };
     commands.spawn((
         SpriteBundle {
             sprite: Sprite {
@@ -352,4 +476,33 @@ pub fn setup(
         color_map: color_map_image,
         color_texture: color_image,
     });
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn double_buffered_swap() {
+        let mut buffer = DoubleBuffered::new(1, 2);
+
+        assert!(*buffer.source() == 1);
+        assert!(*buffer.target() == 2);
+
+        buffer.swap();
+
+        assert!(*buffer.source() == 2);
+        assert!(*buffer.target() == 1);
+    }
+
+    #[test]
+    fn double_buffered_source_and_target_mut() {
+        let mut buffer = DoubleBuffered::new(1, 2);
+
+        buffer.swap();
+
+        let (source, target) = buffer.source_and_target_mut();
+        assert!(*source == 2);
+        assert!(*target == 1);
+    }
 }
