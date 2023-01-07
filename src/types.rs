@@ -32,7 +32,7 @@ impl From<u8> for Material {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Enum)]
-pub enum Phase {
+pub enum StateOfMatter {
     Solid,
     Liquid,
     Gas,
@@ -43,8 +43,8 @@ pub struct ToolState {
     pub draw_type: Material,
 }
 
-#[derive(Resource)]
+#[derive(Resource, Deref)]
 pub struct MaterialDensities(pub EnumMap<Material, u32>);
 
-#[derive(Resource)]
-pub struct MaterialPhases(pub EnumMap<Material, Phase>);
+#[derive(Resource, Deref)]
+pub struct MaterialStates(pub EnumMap<Material, StateOfMatter>);

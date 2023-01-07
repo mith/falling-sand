@@ -4,12 +4,15 @@ extern crate enum_map;
 use bevy::{input::mouse::MouseWheel, prelude::*, render::camera::Camera};
 use bevy_inspector_egui::InspectorPlugin;
 use falling_sand::FallingSandPhase;
+use grid::FallingSandGrid;
+use margolus::MargolusSettings;
 
 use crate::{
-    falling_sand::{FallingSand, FallingSandPlugin, FallingSandSettings},
+    falling_sand::{FallingSandPlugin, FallingSandSettings},
     types::{Material, ToolState},
 };
 
+mod double_buffered;
 mod falling_sand;
 mod grid;
 mod margolus;
@@ -30,10 +33,8 @@ fn main() {
             .set(ImagePlugin::default_nearest()),
     );
 
-    app.add_plugin(FallingSandPlugin {
-        settings: FallingSandSettings { ..default() },
-    })
-    .add_plugin(InspectorPlugin::<FallingSandSettings>::new());
+    app.add_plugin(FallingSandPlugin::default())
+        .add_plugin(InspectorPlugin::<MargolusSettings>::new());
 
     app.add_startup_system(setup)
         .add_system(draw_tool_system.after(FallingSandPhase))
@@ -140,7 +141,7 @@ fn switch_tool_system(mut tool_state: ResMut<ToolState>, keyboard_input: Res<Inp
 
 fn draw_tool_system(
     windows: Res<Windows>,
-    mut grid_query: Query<(&mut FallingSand, &GlobalTransform)>,
+    mut grid_query: Query<(&mut FallingSandGrid, &GlobalTransform)>,
     mouse_button_input: Res<Input<MouseButton>>,
     camera_transforms: Query<(&GlobalTransform, &OrthographicProjection), With<Camera>>,
     tool_state: Res<ToolState>,
@@ -177,7 +178,7 @@ fn draw_tool_system(
             );
             if tile_position.0 > 0 && tile_position.1 > 0 {
                 if let Some(cell) = grid
-                    .cells
+                    .0
                     .target_mut()
                     .get_mut((tile_position.0 as usize, tile_position.1 as usize))
                 {
@@ -199,9 +200,6 @@ fn get_tile_position_under_cursor(
     tile_size: u32,
 ) -> (i32, i32) {
     let translation = camera_transform.transform_point(cursor_position * camera_scale);
-    // let translation =
-    //     camera_transform.compute_matrix().inverse() * Vec4::from((cursor_position, 1.));
-    // - Vec4::from((tilemap_transform.translation(), 0.));
     let point_x = translation.x / tile_size as f32;
     let point_y = translation.y / tile_size as f32;
     (
@@ -338,5 +336,47 @@ mod test {
             tile_size,
         );
         assert_eq!(tile_position, (-5, 15));
+    }
+
+    #[test]
+    fn get_tile_position_under_cursor_translated_tilemap() {
+        let camera_transform = GlobalTransform::from_translation(Vec3::new(0., 0., 0.));
+        let tilemap_transform = GlobalTransform::from_translation(Vec3::new(10., 10., 0.));
+        let grid_size = (10, 10);
+        let tile_size = 2;
+        let camera_scale = 1.;
+
+        let cursor_position = Vec3::new(0., 0., 0.);
+        let tile_position = get_tile_position_under_cursor(
+            cursor_position,
+            &camera_transform,
+            camera_scale,
+            &tilemap_transform,
+            grid_size,
+            tile_size,
+        );
+        assert_eq!(tile_position, (0, 10));
+
+        let cursor_position = Vec3::new(10., 10., 0.);
+        let tile_position = get_tile_position_under_cursor(
+            cursor_position,
+            &camera_transform,
+            camera_scale,
+            &tilemap_transform,
+            grid_size,
+            tile_size,
+        );
+        assert_eq!(tile_position, (5, 5));
+
+        let cursor_position = Vec3::new(-10., -10., 0.);
+        let tile_position = get_tile_position_under_cursor(
+            cursor_position,
+            &camera_transform,
+            camera_scale,
+            &tilemap_transform,
+            grid_size,
+            tile_size,
+        );
+        assert_eq!(tile_position, (10, 0));
     }
 }
