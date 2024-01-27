@@ -1,10 +1,9 @@
 use bevy::prelude::*;
-use bevy_inspector_egui::Inspectable;
 use ndarray::{arr2, s, ArrayView2, ArrayViewMut2, Zip};
 
 use crate::{
-    grid::FallingSandGrid,
-    types::{Material, MaterialDensities, MaterialStates, StateOfMatter},
+    falling_sand::FallingSandGrid,
+    types::{Material, MaterialDensities, MaterialStates, Particle, StateOfMatter},
 };
 
 #[derive(Resource, Default)]
@@ -12,13 +11,13 @@ pub struct MargulosState {
     pub odd_timestep: bool,
 }
 
-#[derive(Clone, Reflect, Inspectable)]
+#[derive(Clone, Reflect)]
 pub enum BorderUpdateMode {
     CopyEntireSource,
     CopyBorder,
 }
 
-#[derive(Resource, Reflect, Inspectable)]
+#[derive(Resource, Reflect)]
 pub struct MargolusSettings {
     pub border_update_mode: BorderUpdateMode,
     pub parallel_gravity: bool,
@@ -41,7 +40,7 @@ pub fn margolus_gravity(
     material_states: Res<MaterialStates>,
 ) {
     for mut grid in grid_query.iter_mut() {
-        grid.swap();
+        grid.0.swap();
         let (source, target) = {
             if margolus.odd_timestep {
                 let (source, target) = grid.0.source_and_target_mut();
@@ -106,8 +105,8 @@ fn is_fluid(state: StateOfMatter) -> bool {
 }
 
 fn margolus_gravity_neighborhood(
-    mut target: ArrayViewMut2<Material>,
-    source: ArrayView2<Material>,
+    mut target: ArrayViewMut2<Particle>,
+    source: ArrayView2<Particle>,
     material_densities: &MaterialDensities,
     material_phases: &MaterialStates,
 ) {
@@ -127,20 +126,25 @@ fn margolus_gravity_neighborhood(
     let c = *source.get(c_i).unwrap();
     let d = *source.get(d_i).unwrap();
 
-    let a_density = material_densities[a];
-    let b_density = material_densities[b];
-    let c_density = material_densities[c];
-    let d_density = material_densities[d];
+    let a_density = material_densities[a.material];
+    let b_density = material_densities[b.material];
+    let c_density = material_densities[c.material];
+    let d_density = material_densities[d.material];
 
-    let a_phase = material_phases[a];
-    let b_phase = material_phases[b];
-    let c_phase = material_phases[c];
-    let d_phase = material_phases[d];
+    let a_phase = material_phases[a.material];
+    let b_phase = material_phases[b.material];
+    let c_phase = material_phases[c.material];
+    let d_phase = material_phases[d.material];
 
-    if source.iter().all(|material| *material == source[[0, 0]]) {
+    if source.iter().all(|p| p.material == source[[0, 0]].material) {
         // If all cells match, just copy the source to the target
+        // Since this is the most common case, it's worth checking for
+        // before doing the more expensive checks below
         target.assign(&source);
-    } else if source.iter().map(|m| material_phases[*m]).all(is_fluid)
+    } else if source
+        .iter()
+        .map(|p| material_phases[p.material])
+        .all(is_fluid)
         && a_density > c_density
         && b_density > d_density
     {

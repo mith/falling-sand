@@ -1,3 +1,4 @@
+#[derive(Debug)]
 pub struct DoubleBuffered<T> {
     pub odd: T,
     pub even: T,

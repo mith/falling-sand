@@ -3,7 +3,7 @@ use bevy::prelude::*;
 use bytemuck::{Contiguous, NoUninit};
 use enum_map::EnumMap;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Enum, NoUninit)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Enum, NoUninit, Reflect)]
 #[repr(u32)]
 pub enum Material {
     Air = 0,
@@ -36,6 +36,22 @@ pub enum StateOfMatter {
     Solid,
     Liquid,
     Gas,
+}
+
+#[derive(Debug, Clone, Copy, NoUninit, Reflect)]
+#[repr(C)]
+pub struct Particle {
+    pub material: Material,
+    pub pressure: f32,
+}
+
+impl Particle {
+    pub fn new(material: Material) -> Particle {
+        Particle {
+            material: material,
+            pressure: 1.0,
+        }
+    }
 }
 
 #[derive(Resource)]

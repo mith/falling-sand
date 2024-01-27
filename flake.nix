@@ -29,23 +29,7 @@
         pkgs = nixpkgs.legacyPackages."${system}";
         toolchain = fenix.packages.${system}.stable;
         crane-lib = crane.lib."${system}";
-        falling-sand-src = builtins.path {
-          path = ./.;
-          name = "falling-sand-src";
-          filter = path: type:
-            nixpkgs.lib.all
-            (n: builtins.baseNameOf path != n)
-            [
-              "web"
-              "assets"
-              "flake.nix"
-              "flake.lock"
-              "README.md"
-              ".envrc"
-              ".direnv"
-              ".gitignore"
-            ];
-        };
+        falling-sand-src = crane-lib.cleanCargoSource ./.;
         buildInputs = with pkgs; [
           libxkbcommon
           alsa-lib
@@ -65,65 +49,67 @@
           pkg-config
         ];
       in {
-        packages.falling-sand-bin = crane-lib.buildPackage {
-          name = "falling-sand-bin";
-          src = falling-sand-src;
-          inherit buildInputs;
-          inherit nativeBuildInputs;
-        };
-        packages.falling-sand = pkgs.stdenv.mkDerivation {
-          name = "falling-sand";
-          src = ./assets;
-          phases = ["unpackPhase" "installPhase"];
-          installPhase = ''
-            mkdir -p $out
-            cp ${self.packages.${system}.falling-sand-bin}/bin/falling-sand $out/falling-sand
-            cp -r $src $out/assets
-          '';
-        };
-
-        packages.falling-sand-wasm = let
-          target = "wasm32-unknown-unknown";
-          toolchain = with fenix.packages.${system};
-            combine [
-              stable.rustc
-              stable.cargo
-              targets.${target}.stable.rust-std
-            ];
-          craneWasm = (crane.mkLib pkgs).overrideToolchain toolchain;
-        in
-          craneWasm.buildPackage {
+        packages = {
+          falling-sand-bin = crane-lib.buildPackage {
+            name = "falling-sand-bin";
             src = falling-sand-src;
-            CARGO_BUILD_TARGET = target;
-            CARGO_PROFILE = "release";
+            inherit buildInputs;
             inherit nativeBuildInputs;
-            doCheck = false;
           };
-
-        packages.falling-sand-web = let
-          local = import inputs.nixpkgs-local {inherit system;};
-        in
-          pkgs.stdenv.mkDerivation {
-            name = "falling-sand-web";
-            src = ./.;
-            nativeBuildInputs = [
-              local.wasm-bindgen-cli
-              pkgs.binaryen
-            ];
+          falling-sand = pkgs.stdenv.mkDerivation {
+            name = "falling-sand";
+            src = ./assets;
             phases = ["unpackPhase" "installPhase"];
             installPhase = ''
               mkdir -p $out
-              wasm-bindgen --out-dir $out --out-name falling-sand --target web ${self.packages.${system}.falling-sand-wasm}/bin/falling-sand.wasm
-              mv $out/falling-sand_bg.wasm .
-              wasm-opt -Oz -o $out/falling-sand_bg.wasm falling-sand_bg.wasm
-              cp web/* $out/
-              cp -r assets $out/assets
+              cp ${self.packages.${system}.falling-sand-bin}/bin/falling-sand $out/falling-sand
+              cp -r $src $out/assets
             '';
           };
 
-        packages.falling-sand-server = pkgs.writeShellScriptBin "run-falling-sand-server" ''
-          ${pkgs.simple-http-server}/bin/simple-http-server -i -c=html,wasm,ttf,js -- ${self.packages.${system}.falling-sand-web}/
-        '';
+          falling-sand-wasm = let
+            target = "wasm32-unknown-unknown";
+            toolchain = with fenix.packages.${system};
+              combine [
+                stable.rustc
+                stable.cargo
+                targets.${target}.stable.rust-std
+              ];
+            craneWasm = (crane.mkLib pkgs).overrideToolchain toolchain;
+          in
+            craneWasm.buildPackage {
+              src = falling-sand-src;
+              CARGO_BUILD_TARGET = target;
+              CARGO_PROFILE = "release";
+              inherit nativeBuildInputs;
+              doCheck = false;
+            };
+
+          falling-sand-web = let
+            local = import inputs.nixpkgs-local {inherit system;};
+          in
+            pkgs.stdenv.mkDerivation {
+              name = "falling-sand-web";
+              src = ./.;
+              nativeBuildInputs = [
+                local.wasm-bindgen-cli
+                pkgs.binaryen
+              ];
+              phases = ["unpackPhase" "installPhase"];
+              installPhase = ''
+                mkdir -p $out
+                wasm-bindgen --out-dir $out --out-name falling-sand --target web ${self.packages.${system}.falling-sand-wasm}/bin/falling-sand.wasm
+                mv $out/falling-sand_bg.wasm .
+                wasm-opt -Oz -o $out/falling-sand_bg.wasm falling-sand_bg.wasm
+                cp web/* $out/
+                cp -r assets $out/assets
+              '';
+            };
+
+          falling-sand-server = pkgs.writeShellScriptBin "run-falling-sand-server" ''
+            ${pkgs.simple-http-server}/bin/simple-http-server -i -c=html,wasm,ttf,js -- ${self.packages.${system}.falling-sand-web}/
+          '';
+        };
 
         defaultPackage = self.packages.${system}.falling-sand;
 

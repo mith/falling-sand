@@ -1,10 +1,17 @@
 #[macro_use]
 extern crate enum_map;
 
-use bevy::{input::mouse::MouseWheel, prelude::*, render::camera::Camera};
+use std::{fs::File, io::Write};
+
+use nix::{
+    libc::{self},
+    sys::wait::waitpid,
+    unistd::{fork, write, ForkResult},
+};
+
+use bevy::{input::mouse::MouseWheel, prelude::*, render::camera::Camera, tasks::IoTaskPool};
 use bevy_inspector_egui::InspectorPlugin;
-use falling_sand::FallingSandPhase;
-use grid::FallingSandGrid;
+use falling_sand::{FallingSandGrid, FallingSandSet};
 use margolus::MargolusSettings;
 
 use crate::{
@@ -14,47 +21,89 @@ use crate::{
 
 mod double_buffered;
 mod falling_sand;
-mod grid;
+mod flow;
 mod margolus;
+mod particle_grid;
 mod types;
 
 fn main() {
     let mut app = App::new();
 
-    app.add_plugins(
-        DefaultPlugins
-            .set(WindowPlugin {
-                window: WindowDescriptor {
-                    // mode: bevy::window::WindowMode::BorderlessFullscreen,
-                    ..Default::default()
-                },
-                ..default()
-            })
-            .set(ImagePlugin::default_nearest()),
+    app.add_plugins((
+        DefaultPlugins.set(ImagePlugin::default_nearest()),
+        FallingSandPlugin::default(),
+    ));
+
+    app.add_systems(Startup, setup);
+    app.add_systems(
+        Update,
+        (
+            draw_tool_system.after(FallingSandSet),
+            switch_tool_system,
+            camera_zoom,
+            move_camera_mouse,
+            save_scene_fork,
+        ),
     );
-
-    app.add_plugin(FallingSandPlugin::default())
-        .add_plugin(InspectorPlugin::<MargolusSettings>::new());
-
-    app.add_startup_system(setup)
-        .add_system(draw_tool_system.after(FallingSandPhase))
-        .add_system(switch_tool_system)
-        .add_system(camera_zoom)
-        .add_system(move_camera_mouse)
-        .insert_resource(CameraSettings {
-            zoom_speed: 0.1,
-            min_zoom: 0.1,
-            max_zoom: 10.0,
-        })
-        .insert_resource(ClearColor(Color::WHITE))
-        .insert_resource(ToolState {
-            draw_type: Material::Sand,
-        })
-        .run();
+    app.insert_resource(CameraSettings {
+        zoom_speed: 0.1,
+        min_zoom: 0.1,
+        max_zoom: 10.0,
+    })
+    .insert_resource(ClearColor(Color::WHITE))
+    .insert_resource(ToolState {
+        draw_type: Material::Sand,
+    })
+    .run();
 }
 
 fn setup(mut commands: Commands) {
-    commands.spawn((Camera2dBundle::default(), DragState::default()));
+    commands.spawn((
+        Name::new("Main camera"),
+        Camera2dBundle::default(),
+        DragState::default(),
+    ));
+}
+
+fn save_scene_fork(
+    world: &World,
+    type_registry: Res<AppTypeRegistry>,
+    keyboard_input: Res<Input<KeyCode>>,
+) {
+    if !keyboard_input.just_pressed(KeyCode::F5) {
+        return;
+    }
+
+    // Fork the process to save the scene in a child process.
+    // The memory pages are marked as copy-on-write, so the child process
+    // can save the gamestate while the main process is still running.
+    // This way the game simulation is not paused while saving.
+    // It works for Factorio, so it should work here too
+    match unsafe { fork() } {
+        Ok(ForkResult::Parent { child, .. }) => {
+            println!("Forked child save process with pid {}", child);
+            // spawn a task to wait for the child process to finish
+            IoTaskPool::get()
+                .spawn(async move {
+                    // wait for the child process to finish
+                    waitpid(child, None).expect("Failed to wait for child process");
+                    println!("Child save process finished");
+                })
+                .detach();
+            println!("Continuing simulation");
+        }
+        Ok(ForkResult::Child) => {
+            let scene = DynamicScene::from_world(&world);
+            let serialized_scene = scene.serialize_ron(&type_registry).unwrap();
+            File::create(format!("test_save.ron"))
+                .and_then(|mut file| file.write(serialized_scene.as_bytes()))
+                .expect("Error while saving scene to file");
+            write(libc::STDOUT_FILENO, "Saved scene to file\n".as_bytes()).ok();
+            // exit the child process
+            unsafe { libc::_exit(0) };
+        }
+        Err(e) => panic!("Failed to fork: {}", e),
+    }
 }
 
 #[derive(Resource)]
@@ -68,9 +117,9 @@ fn camera_zoom(
     mut query: Query<(&mut Transform, &mut OrthographicProjection), With<Camera>>,
     mut mouse_wheel_events: EventReader<MouseWheel>,
     camera_settings: Res<CameraSettings>,
-    windows: Res<Windows>,
+    windows: Query<&Window>,
 ) {
-    if let Some(window) = windows.get_primary() {
+    if let Some(window) = windows.get_single().ok() {
         for event in mouse_wheel_events.iter() {
             for (mut transform, mut ortho) in query.iter_mut() {
                 if let Some(cursor_pos) = window.cursor_position() {
@@ -103,10 +152,10 @@ pub struct DragState {
 
 pub fn move_camera_mouse(
     mouse_button_input: Res<Input<MouseButton>>,
-    windows: Res<Windows>,
+    windows: Query<&Window>,
     mut query: Query<(&mut Transform, &mut OrthographicProjection, &mut DragState), With<Camera>>,
 ) {
-    if let Some(window) = windows.get_primary() {
+    if let Some(window) = windows.get_single().ok() {
         for (mut transform, ortho, mut state) in query.iter_mut() {
             if mouse_button_input.just_pressed(MouseButton::Middle) {
                 if let Some(cursor_pos) = window.cursor_position() {
@@ -140,14 +189,14 @@ fn switch_tool_system(mut tool_state: ResMut<ToolState>, keyboard_input: Res<Inp
 }
 
 fn draw_tool_system(
-    windows: Res<Windows>,
+    windows: Query<&Window>,
     mut grid_query: Query<(&mut FallingSandGrid, &GlobalTransform)>,
     mouse_button_input: Res<Input<MouseButton>>,
     camera_transforms: Query<(&GlobalTransform, &OrthographicProjection), With<Camera>>,
     tool_state: Res<ToolState>,
     falling_sand_settings: Res<FallingSandSettings>,
 ) {
-    let maybe_window: Option<Vec3> = windows.get_primary().and_then(|window| {
+    let maybe_window: Option<Vec3> = windows.get_single().ok().and_then(|window| {
         window.cursor_position().map(|cursor_position| {
             Vec3::new(
                 cursor_position.x - window.width() / 2.0,
@@ -173,7 +222,7 @@ fn draw_tool_system(
                 camera_transform,
                 projection.scale,
                 grid_transform,
-                grid.size(),
+                grid.0.even.dim(),
                 falling_sand_settings.tile_size,
             );
             if tile_position.0 > 0 && tile_position.1 > 0 {
@@ -182,8 +231,8 @@ fn draw_tool_system(
                     .target_mut()
                     .get_mut((tile_position.0 as usize, tile_position.1 as usize))
                 {
-                    if *cell != Material::Bedrock {
-                        *cell = tool_state.draw_type;
+                    if cell.material != Material::Bedrock {
+                        cell.material = tool_state.draw_type;
                     }
                 }
             }
