@@ -3,22 +3,25 @@ extern crate enum_map;
 
 use std::{fs::File, io::Write};
 
+use bevy_inspector_egui::quick::WorldInspectorPlugin;
+use cursor_world_position::{CursorWorldPosition, CursorWorldPositionPlugin};
 use nix::{
     libc::{self},
     sys::wait::waitpid,
     unistd::{fork, write, ForkResult},
 };
 
-use bevy::{input::mouse::MouseWheel, prelude::*, render::camera::Camera, tasks::IoTaskPool};
-use bevy_inspector_egui::InspectorPlugin;
+use bevy::{
+    input::mouse::MouseWheel, prelude::*, render::camera::Camera, tasks::IoTaskPool, utils::HashMap,
+};
 use falling_sand::{FallingSandGrid, FallingSandSet};
-use margolus::MargolusSettings;
 
 use crate::{
     falling_sand::{FallingSandPlugin, FallingSandSettings},
     types::{Material, ToolState},
 };
 
+mod cursor_world_position;
 mod double_buffered;
 mod falling_sand;
 mod flow;
@@ -31,6 +34,8 @@ fn main() {
 
     app.add_plugins((
         DefaultPlugins.set(ImagePlugin::default_nearest()),
+        WorldInspectorPlugin::default(),
+        CursorWorldPositionPlugin,
         FallingSandPlugin::default(),
     ));
 
@@ -93,9 +98,9 @@ fn save_scene_fork(
             println!("Continuing simulation");
         }
         Ok(ForkResult::Child) => {
-            let scene = DynamicScene::from_world(&world);
+            let scene = DynamicScene::from_world(world);
             let serialized_scene = scene.serialize_ron(&type_registry).unwrap();
-            File::create(format!("test_save.ron"))
+            File::create("test_save.ron")
                 .and_then(|mut file| file.write(serialized_scene.as_bytes()))
                 .expect("Error while saving scene to file");
             write(libc::STDOUT_FILENO, "Saved scene to file\n".as_bytes()).ok();
@@ -114,33 +119,16 @@ pub struct CameraSettings {
 }
 
 fn camera_zoom(
-    mut query: Query<(&mut Transform, &mut OrthographicProjection), With<Camera>>,
+    mut query: Query<&mut OrthographicProjection>,
     mut mouse_wheel_events: EventReader<MouseWheel>,
     camera_settings: Res<CameraSettings>,
-    windows: Query<&Window>,
 ) {
-    if let Some(window) = windows.get_single().ok() {
-        for event in mouse_wheel_events.iter() {
-            for (mut transform, mut ortho) in query.iter_mut() {
-                if let Some(cursor_pos) = window.cursor_position() {
-                    let old_scale = ortho.scale;
-                    let mut zoom_change = ortho.scale * event.y * camera_settings.zoom_speed;
-                    ortho.scale -= zoom_change;
-
-                    if ortho.scale < camera_settings.min_zoom {
-                        ortho.scale = camera_settings.min_zoom;
-                        zoom_change = old_scale - ortho.scale;
-                    }
-
-                    // Move the camera toward the cursor position to keep the current object
-                    // underneath it.
-                    let from_center =
-                        cursor_pos - Vec2::new(window.width() / 2., window.height() / 2.);
-
-                    let scaled_move = from_center * event.y * zoom_change.abs();
-                    transform.translation += Vec3::new(scaled_move.x, scaled_move.y, 0.);
-                }
-            }
+    for mut projection in &mut query {
+        for event in mouse_wheel_events.read() {
+            projection.scale -= projection.scale * event.y * camera_settings.zoom_speed;
+            projection.scale = projection
+                .scale
+                .clamp(camera_settings.min_zoom, camera_settings.max_zoom);
         }
     }
 }
@@ -155,7 +143,7 @@ pub fn move_camera_mouse(
     windows: Query<&Window>,
     mut query: Query<(&mut Transform, &mut OrthographicProjection, &mut DragState), With<Camera>>,
 ) {
-    if let Some(window) = windows.get_single().ok() {
+    if let Ok(window) = windows.get_single() {
         for (mut transform, ortho, mut state) in query.iter_mut() {
             if mouse_button_input.just_pressed(MouseButton::Middle) {
                 if let Some(cursor_pos) = window.cursor_position() {
@@ -171,7 +159,8 @@ pub fn move_camera_mouse(
                 if let Some(cursor) = window.cursor_position() {
                     let diff = cursor - drag_start;
                     let z = transform.translation.z;
-                    transform.translation = cam_start - Vec3::new(diff.x, diff.y, 0.) * ortho.scale;
+                    transform.translation =
+                        cam_start - Vec3::new(diff.x, -diff.y, 0.) * ortho.scale;
                     transform.translation.z = z;
                 }
             }
@@ -180,37 +169,26 @@ pub fn move_camera_mouse(
 }
 
 fn switch_tool_system(mut tool_state: ResMut<ToolState>, keyboard_input: Res<Input<KeyCode>>) {
-    if keyboard_input.pressed(KeyCode::Key1) {
-        tool_state.draw_type = Material::Sand;
-    }
-    if keyboard_input.pressed(KeyCode::Key2) {
-        tool_state.draw_type = Material::Water;
+    let material_keys = HashMap::from_iter([
+        (KeyCode::Key1, Material::Sand),
+        (KeyCode::Key2, Material::Water),
+    ]);
+    if let Some(material) = keyboard_input
+        .get_pressed()
+        .find_map(|p| material_keys.get(p))
+    {
+        tool_state.draw_type = *material;
     }
 }
 
 fn draw_tool_system(
-    windows: Query<&Window>,
     mut grid_query: Query<(&mut FallingSandGrid, &GlobalTransform)>,
     mouse_button_input: Res<Input<MouseButton>>,
     camera_transforms: Query<(&GlobalTransform, &OrthographicProjection), With<Camera>>,
     tool_state: Res<ToolState>,
     falling_sand_settings: Res<FallingSandSettings>,
+    cursor_world_position: Res<CursorWorldPosition>,
 ) {
-    let maybe_window: Option<Vec3> = windows.get_single().ok().and_then(|window| {
-        window.cursor_position().map(|cursor_position| {
-            Vec3::new(
-                cursor_position.x - window.width() / 2.0,
-                cursor_position.y - window.height() / 2.0,
-                0.0,
-            )
-        })
-    });
-    let cursor_position = if let Some(window) = maybe_window {
-        window
-    } else {
-        return;
-    };
-
     if !mouse_button_input.pressed(MouseButton::Left) {
         return;
     }
@@ -218,21 +196,20 @@ fn draw_tool_system(
     for (camera_transform, projection) in camera_transforms.iter() {
         for (mut grid, grid_transform) in grid_query.iter_mut() {
             let tile_position = get_tile_position_under_cursor(
-                cursor_position,
+                cursor_world_position.position().extend(0.),
                 camera_transform,
-                projection.scale,
-                grid_transform,
                 grid.0.even.dim(),
                 falling_sand_settings.tile_size,
             );
             if tile_position.0 > 0 && tile_position.1 > 0 {
                 if let Some(cell) = grid
                     .0
-                    .target_mut()
+                    .source_mut()
                     .get_mut((tile_position.0 as usize, tile_position.1 as usize))
                 {
                     if cell.material != Material::Bedrock {
                         cell.material = tool_state.draw_type;
+                        cell.pressure = 1.0;
                     }
                 }
             }
@@ -243,12 +220,10 @@ fn draw_tool_system(
 fn get_tile_position_under_cursor(
     cursor_position: Vec3,
     camera_transform: &GlobalTransform,
-    camera_scale: f32,
-    tilemap_transform: &GlobalTransform,
     grid_size: (usize, usize),
     tile_size: u32,
 ) -> (i32, i32) {
-    let translation = camera_transform.transform_point(cursor_position * camera_scale);
+    let translation = camera_transform.transform_point(cursor_position);
     let point_x = translation.x / tile_size as f32;
     let point_y = translation.y / tile_size as f32;
     (

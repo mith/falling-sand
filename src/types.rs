@@ -2,6 +2,7 @@ use bevy::prelude::*;
 
 use bytemuck::{Contiguous, NoUninit};
 use enum_map::EnumMap;
+use half::f16;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Enum, NoUninit, Reflect)]
 #[repr(u32)]
@@ -43,13 +44,15 @@ pub enum StateOfMatter {
 pub struct Particle {
     pub material: Material,
     pub pressure: f32,
+    pub velocity: Vec2,
 }
 
 impl Particle {
     pub fn new(material: Material) -> Particle {
         Particle {
-            material: material,
+            material,
             pressure: 1.0,
+            velocity: Vec2::ZERO,
         }
     }
 }

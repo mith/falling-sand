@@ -3,8 +3,7 @@ use std::borrow::Cow;
 use bevy::{
     prelude::*,
     render::{
-        self,
-        render_resource::{AsBindGroup, BindGroupEntries, CachedPipelineState},
+        render_resource::{BindGroupEntries, CachedPipelineState},
         Render,
     },
 };
@@ -12,25 +11,24 @@ use bevy::{
 use bevy::render::extract_resource::{ExtractResource, ExtractResourcePlugin};
 use bevy::render::render_asset::RenderAssets;
 use bevy::render::render_resource::{
-    BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor,
-    BindGroupLayoutEntry, BindingResource, BindingType, CachedComputePipelineId,
-    ComputePassDescriptor, ComputePipelineDescriptor, Extent3d, PipelineCache, ShaderStages,
-    StorageTextureAccess, TextureDimension, TextureFormat, TextureUsages, TextureViewDimension,
+    BindGroup, BindGroupLayout, BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingType,
+    CachedComputePipelineId, ComputePassDescriptor, ComputePipelineDescriptor, Extent3d,
+    PipelineCache, ShaderStages, StorageTextureAccess, TextureDimension, TextureFormat,
+    TextureUsages, TextureViewDimension,
 };
 use bevy::render::renderer::RenderDevice;
-use bevy::render::texture::TextureFormatPixelInfo;
 use bevy::render::{render_graph, RenderApp, RenderSet};
 
-use bevy_inspector_egui::Inspectable;
 use bytemuck::cast_slice;
 use ndarray::s;
 
-use crate::double_buffered::DoubleBuffered;
-use crate::flow::{flow, MIN_PRESSURE};
-use crate::margolus::{margolus_gravity, MargolusSettings, MargulosState};
-use crate::particle_grid::ParticleGrid;
-use crate::types::Particle;
-use crate::types::{Material, MaterialDensities, MaterialStates, StateOfMatter};
+use crate::{
+    double_buffered::DoubleBuffered,
+    flow::{flow, MIN_PRESSURE},
+    margolus::{gravity::margolus_gravity, margulos_timestep, MargolusSettings, MargulosState},
+    particle_grid::ParticleGrid,
+    types::{Material, MaterialDensities, MaterialStates, Particle, StateOfMatter},
+};
 
 #[derive(Component, Deref, DerefMut)]
 pub struct FallingSandGrid(pub DoubleBuffered<ParticleGrid>);
@@ -55,7 +53,7 @@ pub fn grid_to_texture(
         if let Some(materials_texture) = textures.get_mut(&falling_sand.materials_texture) {
             materials_texture.data.copy_from_slice(cast_slice(
                 grid.0
-                    .target()
+                    .source()
                     .as_slice()
                     .expect("Failed to get slice from grid"),
             ));
@@ -99,11 +97,7 @@ impl Plugin for FallingSandPlugin {
         .add_systems(Startup, setup)
         .add_systems(
             Update,
-            (
-                margolus_gravity,
-                flow.after(margolus_gravity),
-                grid_to_texture.after(flow),
-            ),
+            (margulos_timestep, margolus_gravity, flow, grid_to_texture).chain(),
         );
 
         let render_app = app.sub_app_mut(RenderApp);
@@ -135,8 +129,8 @@ pub struct FallingSandSettings {
 impl Default for FallingSandSettings {
     fn default() -> Self {
         FallingSandSettings {
-            size: (500, 500),
-            tile_size: 2,
+            size: (50, 50),
+            tile_size: 1,
         }
     }
 }
@@ -164,9 +158,9 @@ fn prepare_bind_group(
     falling_sand_images: Res<FallingSandImages>,
     render_device: Res<RenderDevice>,
 ) {
-    let particle_grid = &gpu_images.get(&falling_sand_images.grid_texture).unwrap();
-    let color_map = &gpu_images.get(&falling_sand_images.color_map).unwrap();
-    let render_target = &gpu_images.get(&falling_sand_images.color_texture).unwrap();
+    let particle_grid = gpu_images.get(&falling_sand_images.grid_texture).unwrap();
+    let color_map = gpu_images.get(&falling_sand_images.color_map).unwrap();
+    let render_target = gpu_images.get(&falling_sand_images.color_texture).unwrap();
 
     let bind_group = render_device.create_bind_group(
         Some("grid_material_bind_group"),
@@ -194,7 +188,7 @@ impl FromWorld for FallingSandPipeline {
                             visibility: ShaderStages::COMPUTE,
                             ty: BindingType::StorageTexture {
                                 access: StorageTextureAccess::ReadOnly,
-                                format: TextureFormat::Rg32Uint,
+                                format: TextureFormat::Rgba32Uint,
                                 view_dimension: TextureViewDimension::D2,
                             },
                             count: None,
@@ -226,19 +220,20 @@ impl FromWorld for FallingSandPipeline {
             .resource::<AssetServer>()
             .load("shaders/grid_to_texture.wgsl");
 
-        let mut pipeline_cache = world.resource_mut::<PipelineCache>();
-        let update_pipeline = pipeline_cache.queue_compute_pipeline(ComputePipelineDescriptor {
-            layout: vec![texture_bind_group_layout.clone()],
-            shader: shader.clone(),
-            shader_defs: vec![],
-            entry_point: Cow::from("update"),
-            push_constant_ranges: vec![],
-            label: None,
-        });
+        let pipeline_cache = world.resource_mut::<PipelineCache>();
+        let render_grid_pipeline =
+            pipeline_cache.queue_compute_pipeline(ComputePipelineDescriptor {
+                label: Some("render_grid_pipeline".into()),
+                layout: vec![texture_bind_group_layout.clone()],
+                push_constant_ranges: vec![],
+                shader,
+                shader_defs: vec![],
+                entry_point: Cow::from("render_grid"),
+            });
 
         FallingSandPipeline {
             texture_bind_group_layout,
-            render_pipeline: update_pipeline,
+            render_pipeline: render_grid_pipeline,
         }
     }
 }
@@ -247,7 +242,7 @@ impl FromWorld for FallingSandPipeline {
 enum FallingSandState {
     #[default]
     Loading,
-    Update,
+    Render,
 }
 
 #[derive(Default)]
@@ -271,10 +266,10 @@ impl render_graph::Node for FallingSandNode {
                     pipeline_cache.get_compute_pipeline_state(pipeline.render_pipeline)
                 {
                     info!("Falling sand pipeline loaded");
-                    self.state = FallingSandState::Update;
+                    self.state = FallingSandState::Render;
                 }
             }
-            FallingSandState::Update => {}
+            FallingSandState::Render => {}
         }
     }
 
@@ -296,11 +291,11 @@ impl render_graph::Node for FallingSandNode {
 
         match self.state {
             FallingSandState::Loading => {}
-            FallingSandState::Update => {
-                let update_pipeline = pipeline_cache
+            FallingSandState::Render => {
+                let render_pipeline = pipeline_cache
                     .get_compute_pipeline(pipeline.render_pipeline)
                     .unwrap();
-                pass.set_pipeline(update_pipeline);
+                pass.set_pipeline(render_pipeline);
 
                 let size = (self.size.0 as u32, self.size.1 as u32);
                 let workgroup_size = 10;
@@ -325,13 +320,15 @@ pub fn setup(
     let grid = {
         let mut grid = ParticleGrid::new(size.0 as usize, size.1 as usize);
         info!("Setting initial grid state");
-        grid.slice_mut(s![10..20, 1]).fill(Particle {
+        grid.slice_mut(s![10, 10]).fill(Particle {
             material: Material::Sand,
-            pressure: MIN_PRESSURE,
+            pressure: 1.,
+            velocity: Vec2::ZERO,
         });
-        grid.slice_mut(s![0..99, 99]).fill(Particle {
+        grid.slice_mut(s![0..49, 49]).fill(Particle {
             material: Material::Bedrock,
-            pressure: MIN_PRESSURE,
+            pressure: 1.,
+            velocity: Vec2::ZERO,
         });
         grid
     };
@@ -345,7 +342,7 @@ pub fn setup(
         },
         TextureDimension::D2,
         &[0u8; 16],
-        TextureFormat::Rg32Uint,
+        TextureFormat::Rgba32Uint,
     );
     grid_image.texture_descriptor.usage =
         TextureUsages::COPY_DST | TextureUsages::STORAGE_BINDING | TextureUsages::TEXTURE_BINDING;

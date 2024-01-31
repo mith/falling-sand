@@ -1,102 +1,34 @@
-use bevy::prelude::*;
-use ndarray::{arr2, s, ArrayView2, ArrayViewMut2, Zip};
+use bevy::ecs::system::{Query, Res};
+use ndarray::{arr2, ArrayView2, ArrayViewMut2};
 
 use crate::{
     falling_sand::FallingSandGrid,
-    types::{Material, MaterialDensities, MaterialStates, Particle, StateOfMatter},
+    types::{MaterialDensities, MaterialStates, Particle, StateOfMatter},
 };
 
-#[derive(Resource, Default)]
-pub struct MargulosState {
-    pub odd_timestep: bool,
-}
-
-#[derive(Clone, Reflect)]
-pub enum BorderUpdateMode {
-    CopyEntireSource,
-    CopyBorder,
-}
-
-#[derive(Resource, Reflect)]
-pub struct MargolusSettings {
-    pub border_update_mode: BorderUpdateMode,
-    pub parallel_gravity: bool,
-}
-
-impl Default for MargolusSettings {
-    fn default() -> Self {
-        Self {
-            border_update_mode: BorderUpdateMode::CopyBorder,
-            parallel_gravity: true,
-        }
-    }
-}
+use super::{margulos, MargolusSettings, MargulosState};
 
 pub fn margolus_gravity(
     mut grid_query: Query<&mut FallingSandGrid>,
-    mut margolus: ResMut<MargulosState>,
-    falling_sand_settings: Res<MargolusSettings>,
+    margolus_state: Res<MargulosState>,
+    margulos_settings: Res<MargolusSettings>,
     material_densities: Res<MaterialDensities>,
     material_states: Res<MaterialStates>,
 ) {
     for mut grid in grid_query.iter_mut() {
-        grid.0.swap();
-        let (source, target) = {
-            if margolus.odd_timestep {
-                let (source, target) = grid.0.source_and_target_mut();
-
-                // Copy the border from the source to the target first
-                match &falling_sand_settings.border_update_mode {
-                    BorderUpdateMode::CopyEntireSource => {
-                        target.assign(&source);
-                    }
-                    BorderUpdateMode::CopyBorder => {
-                        target.slice_mut(s![0, ..]).assign(&source.slice(s![0, ..]));
-                        target
-                            .slice_mut(s![-1, ..])
-                            .assign(&source.slice(s![-1, ..]));
-                        target.slice_mut(s![.., 0]).assign(&source.slice(s![.., 0]));
-                        target
-                            .slice_mut(s![.., -1])
-                            .assign(&source.slice(s![.., -1]));
-                    }
-                };
-                (
-                    source.slice(s![1..-1, 1..-1]),
-                    target.slice_mut(s![1..-1, 1..-1]),
+        margulos(
+            &margolus_state,
+            &margulos_settings,
+            &mut grid,
+            |mut target, source| {
+                margolus_gravity_neighborhood(
+                    target.view_mut(),
+                    source.view(),
+                    &material_densities,
+                    &material_states,
                 )
-            } else {
-                let (source, target) = grid.0.source_and_target_mut();
-                (source.view(), target.view_mut())
-            }
-        };
-
-        let parallel = falling_sand_settings.parallel_gravity;
-        const CHUNK_SIZE: (usize, usize) = (2, 2);
-        if parallel {
-            Zip::from(target.reversed_axes().exact_chunks_mut(CHUNK_SIZE))
-                .and(source.reversed_axes().exact_chunks(CHUNK_SIZE))
-                .par_for_each(|target, source| {
-                    margolus_gravity_neighborhood(
-                        target,
-                        source,
-                        &material_densities,
-                        &material_states,
-                    )
-                });
-        } else {
-            Zip::from(target.reversed_axes().exact_chunks_mut(CHUNK_SIZE))
-                .and(source.reversed_axes().exact_chunks(CHUNK_SIZE))
-                .for_each(|target, source| {
-                    margolus_gravity_neighborhood(
-                        target,
-                        source,
-                        &material_densities,
-                        &material_states,
-                    )
-                });
-        }
-        margolus.odd_timestep = !margolus.odd_timestep;
+            },
+        );
     }
 }
 

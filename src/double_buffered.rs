@@ -21,6 +21,14 @@ impl<T> DoubleBuffered<T> {
         }
     }
 
+    pub fn source_mut(&mut self) -> &mut T {
+        if self.target_is_odd {
+            &mut self.even
+        } else {
+            &mut self.odd
+        }
+    }
+
     pub fn target(&self) -> &T {
         if self.target_is_odd {
             &self.odd
