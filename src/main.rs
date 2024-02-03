@@ -11,22 +11,21 @@ use nix::{
     unistd::{fork, write, ForkResult},
 };
 
-use bevy::{
-    input::mouse::MouseWheel, prelude::*, render::camera::Camera, tasks::IoTaskPool, utils::HashMap,
-};
-use falling_sand::{FallingSandGrid, FallingSandSet};
-
 use crate::{
     falling_sand::{FallingSandPlugin, FallingSandSettings},
     types::{Material, ToolState},
 };
+use bevy::{
+    input::mouse::MouseWheel, prelude::*, render::camera::Camera, tasks::IoTaskPool, utils::HashMap,
+};
+use falling_sand::{FallingSandGrid, FallingSandSet};
+use time_control::TimeControlPlugin;
 
 mod cursor_world_position;
-mod double_buffered;
 mod falling_sand;
-mod flow;
-mod margolus;
+mod movement;
 mod particle_grid;
+mod time_control;
 mod types;
 
 fn main() {
@@ -37,6 +36,7 @@ fn main() {
         WorldInspectorPlugin::default(),
         CursorWorldPositionPlugin,
         FallingSandPlugin::default(),
+        TimeControlPlugin,
     ));
 
     app.add_systems(Startup, setup);
@@ -52,7 +52,7 @@ fn main() {
     );
     app.insert_resource(CameraSettings {
         zoom_speed: 0.1,
-        min_zoom: 0.1,
+        min_zoom: 0.01,
         max_zoom: 10.0,
     })
     .insert_resource(ClearColor(Color::WHITE))
@@ -63,9 +63,11 @@ fn main() {
 }
 
 fn setup(mut commands: Commands) {
+    let mut camera2d_bundle = Camera2dBundle::default();
+    camera2d_bundle.projection.scale = 0.1;
     commands.spawn((
         Name::new("Main camera"),
-        Camera2dBundle::default(),
+        camera2d_bundle,
         DragState::default(),
     ));
 }
@@ -184,52 +186,46 @@ fn switch_tool_system(mut tool_state: ResMut<ToolState>, keyboard_input: Res<Inp
 fn draw_tool_system(
     mut grid_query: Query<(&mut FallingSandGrid, &GlobalTransform)>,
     mouse_button_input: Res<Input<MouseButton>>,
-    camera_transforms: Query<(&GlobalTransform, &OrthographicProjection), With<Camera>>,
     tool_state: Res<ToolState>,
     falling_sand_settings: Res<FallingSandSettings>,
     cursor_world_position: Res<CursorWorldPosition>,
 ) {
-    if !mouse_button_input.pressed(MouseButton::Left) {
+    if !mouse_button_input.just_pressed(MouseButton::Left) {
         return;
     }
 
-    for (camera_transform, projection) in camera_transforms.iter() {
-        for (mut grid, grid_transform) in grid_query.iter_mut() {
-            let tile_position = get_tile_position_under_cursor(
-                cursor_world_position.position().extend(0.),
-                camera_transform,
-                grid.0.even.dim(),
-                falling_sand_settings.tile_size,
-            );
-            if tile_position.0 > 0 && tile_position.1 > 0 {
-                if let Some(cell) = grid
-                    .0
-                    .source_mut()
-                    .get_mut((tile_position.0 as usize, tile_position.1 as usize))
-                {
-                    if cell.material != Material::Bedrock {
-                        cell.material = tool_state.draw_type;
-                        cell.pressure = 1.0;
-                    }
-                }
+    for (mut grid, _grid_transform) in grid_query.iter_mut() {
+        let Some(tile_position) = get_tile_at_world_position(
+            cursor_world_position.position(),
+            grid.particles.grid().dim(),
+            falling_sand_settings.tile_size,
+        ) else {
+            continue;
+        };
+        if let Some(cell) = grid
+            .particles
+            .grid_mut()
+            .get_mut((tile_position.x as usize, tile_position.y as usize))
+        {
+            if cell.material != Material::Bedrock {
+                cell.material = tool_state.draw_type;
             }
         }
     }
 }
 
-fn get_tile_position_under_cursor(
-    cursor_position: Vec3,
-    camera_transform: &GlobalTransform,
+fn get_tile_at_world_position(
+    cursor_position: Vec2,
     grid_size: (usize, usize),
     tile_size: u32,
-) -> (i32, i32) {
-    let translation = camera_transform.transform_point(cursor_position);
-    let point_x = translation.x / tile_size as f32;
-    let point_y = translation.y / tile_size as f32;
-    (
-        point_x.floor() as i32 + (grid_size.0 / 2) as i32,
-        -point_y.floor() as i32 + (grid_size.1 / 2) as i32,
-    )
+) -> Option<IVec2> {
+    let x = (cursor_position.x / tile_size as f32 + grid_size.0 as f32 / 2.0) as i32;
+    let y = (cursor_position.y / tile_size as f32 + grid_size.1 as f32 / 2.0) as i32;
+    if x >= 0 && x < grid_size.0 as i32 && y >= 0 && y < grid_size.1 as i32 {
+        Some(IVec2::new(x, y))
+    } else {
+        None
+    }
 }
 
 #[cfg(test)]
@@ -238,169 +234,19 @@ mod test {
 
     #[test]
     fn test_get_tile_position_under_cursor() {
-        let camera_transform = GlobalTransform::from_translation(Vec3::new(0., 0., 0.));
-        let tilemap_transform = GlobalTransform::from_translation(Vec3::new(0., 0., 0.));
         let grid_size = (10, 10);
-        let tile_size = 2;
-        let camera_scale = 1.;
+        let tile_size = 1;
 
-        let cursor_position = Vec3::new(0., 0., 0.);
-        let tile_position = get_tile_position_under_cursor(
-            cursor_position,
-            &camera_transform,
-            camera_scale,
-            &tilemap_transform,
-            grid_size,
-            tile_size,
-        );
-        assert_eq!(tile_position, (5, 5));
+        let cursor_position = Vec2::new(0., 0.);
+        let tile_position = get_tile_at_world_position(cursor_position, grid_size, tile_size);
+        assert_eq!(tile_position, Some(IVec2::new(5, 5)));
 
-        let cursor_position = Vec3::new(10., 10., 0.);
-        let tile_position = get_tile_position_under_cursor(
-            cursor_position,
-            &camera_transform,
-            camera_scale,
-            &tilemap_transform,
-            grid_size,
-            tile_size,
-        );
-        assert_eq!(tile_position, (10, 0));
+        let cursor_position = Vec2::new(4.5, 4.5);
+        let tile_position = get_tile_at_world_position(cursor_position, grid_size, tile_size);
+        assert_eq!(tile_position, Some(IVec2::new(9, 9)));
 
-        let cursor_position = Vec3::new(-10., -10., 0.);
-        let tile_position = get_tile_position_under_cursor(
-            cursor_position,
-            &camera_transform,
-            camera_scale,
-            &tilemap_transform,
-            grid_size,
-            tile_size,
-        );
-        assert_eq!(tile_position, (0, 10));
-    }
-
-    #[test]
-    fn get_tile_position_under_cursor_translated_camera() {
-        let camera_transform = GlobalTransform::from_translation(Vec3::new(10., 10., 0.));
-        let tilemap_transform = GlobalTransform::from_translation(Vec3::new(0., 0., 0.));
-        let grid_size = (10, 10);
-        let tile_size = 2;
-        let camera_scale = 1.;
-
-        let cursor_position = Vec3::new(0., 0., 0.);
-        let tile_position = get_tile_position_under_cursor(
-            cursor_position,
-            &camera_transform,
-            camera_scale,
-            &tilemap_transform,
-            grid_size,
-            tile_size,
-        );
-        assert_eq!(tile_position, (10, 0));
-
-        let cursor_position = Vec3::new(10., 10., 0.);
-        let tile_position = get_tile_position_under_cursor(
-            cursor_position,
-            &camera_transform,
-            camera_scale,
-            &tilemap_transform,
-            grid_size,
-            tile_size,
-        );
-        assert_eq!(tile_position, (15, -5));
-
-        let cursor_position = Vec3::new(-10., -10., 0.);
-        let tile_position = get_tile_position_under_cursor(
-            cursor_position,
-            &camera_transform,
-            camera_scale,
-            &tilemap_transform,
-            grid_size,
-            tile_size,
-        );
-        assert_eq!(tile_position, (5, 5));
-    }
-
-    #[test]
-    fn get_tile_position_under_cursor_scaled_camera() {
-        let camera_transform = GlobalTransform::from_translation(Vec3::new(0., 0., 0.));
-        let tilemap_transform = GlobalTransform::from_translation(Vec3::new(0., 0., 0.));
-        let grid_size = (10, 10);
-        let tile_size = 2;
-        let camera_scale = 2.;
-
-        let cursor_position = Vec3::new(0., 0., 0.);
-        let tile_position = get_tile_position_under_cursor(
-            cursor_position,
-            &camera_transform,
-            camera_scale,
-            &tilemap_transform,
-            grid_size,
-            tile_size,
-        );
-        assert_eq!(tile_position, (5, 5));
-
-        let cursor_position = Vec3::new(10., 10., 0.);
-        let tile_position = get_tile_position_under_cursor(
-            cursor_position,
-            &camera_transform,
-            camera_scale,
-            &tilemap_transform,
-            grid_size,
-            tile_size,
-        );
-        assert_eq!(tile_position, (15, -5));
-
-        let cursor_position = Vec3::new(-10., -10., 0.);
-        let tile_position = get_tile_position_under_cursor(
-            cursor_position,
-            &camera_transform,
-            camera_scale,
-            &tilemap_transform,
-            grid_size,
-            tile_size,
-        );
-        assert_eq!(tile_position, (-5, 15));
-    }
-
-    #[test]
-    fn get_tile_position_under_cursor_translated_tilemap() {
-        let camera_transform = GlobalTransform::from_translation(Vec3::new(0., 0., 0.));
-        let tilemap_transform = GlobalTransform::from_translation(Vec3::new(10., 10., 0.));
-        let grid_size = (10, 10);
-        let tile_size = 2;
-        let camera_scale = 1.;
-
-        let cursor_position = Vec3::new(0., 0., 0.);
-        let tile_position = get_tile_position_under_cursor(
-            cursor_position,
-            &camera_transform,
-            camera_scale,
-            &tilemap_transform,
-            grid_size,
-            tile_size,
-        );
-        assert_eq!(tile_position, (0, 10));
-
-        let cursor_position = Vec3::new(10., 10., 0.);
-        let tile_position = get_tile_position_under_cursor(
-            cursor_position,
-            &camera_transform,
-            camera_scale,
-            &tilemap_transform,
-            grid_size,
-            tile_size,
-        );
-        assert_eq!(tile_position, (5, 5));
-
-        let cursor_position = Vec3::new(-10., -10., 0.);
-        let tile_position = get_tile_position_under_cursor(
-            cursor_position,
-            &camera_transform,
-            camera_scale,
-            &tilemap_transform,
-            grid_size,
-            tile_size,
-        );
-        assert_eq!(tile_position, (10, 0));
+        let cursor_position = Vec2::new(-4.5, 4.5);
+        let tile_position = get_tile_at_world_position(cursor_position, grid_size, tile_size);
+        assert_eq!(tile_position, Some(IVec2::new(0, 9)));
     }
 }

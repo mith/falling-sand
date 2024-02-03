@@ -1,9 +1,10 @@
 use bevy::{
     app::{App, Plugin, Update},
     ecs::system::{Query, ResMut, Resource},
+    gizmos::gizmos::Gizmos,
     math::Vec2,
     reflect::Reflect,
-    render::camera::Camera,
+    render::{camera::Camera, color::Color},
     transform::components::GlobalTransform,
     window::Window,
 };
@@ -33,6 +34,7 @@ fn update_cursor_world_position(
     window: Query<&Window>,
     camera_query: Query<(&GlobalTransform, &Camera)>,
     mut cursor_world_position_query: ResMut<CursorWorldPosition>,
+    mut gizmos: Gizmos,
 ) {
     let Some(cursor_position) = window
         .get_single()
@@ -51,4 +53,6 @@ fn update_cursor_world_position(
     };
 
     cursor_world_position_query.0 = point;
+
+    gizmos.circle_2d(point, 0.5, Color::GREEN);
 }
