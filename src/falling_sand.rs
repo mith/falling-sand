@@ -23,9 +23,12 @@ use bytemuck::cast_slice;
 use rand::{rngs::StdRng, SeedableRng};
 
 use crate::{
+    fire::fire_to_smoke,
+    material::MaterialIterator,
+    material::{Material, MaterialColor, MaterialPlugin},
     movement::{fall, flow},
     particle_grid::{Particle, ParticleAttributeStore, ParticleGrid},
-    types::{Material, MaterialDensities, MaterialFlowing, MaterialStates, StateOfMatter},
+    react::react,
 };
 
 #[derive(Default)]
@@ -44,41 +47,26 @@ impl Plugin for FallingSandPlugin {
         app.add_plugins((
             ExtractResourcePlugin::<FallingSandImages>::default(),
             ExtractResourcePlugin::<FallingSandSettings>::default(),
+            MaterialPlugin,
         ))
         .insert_resource(Time::<Virtual>::from_max_delta(Duration::from_secs_f32(
             1. / 64.,
         )))
         .insert_resource(self.settings.clone())
-        .insert_resource({
-            MaterialDensities(enum_map! {
-            Material::Air => 1,
-            Material::Water => 1000,
-            Material::Sand => 1500,
-            Material::Bedrock => 10000,
-            })
-        })
-        .insert_resource({
-            MaterialStates(enum_map! {
-            Material::Air => StateOfMatter::Gas,
-            Material::Water => StateOfMatter::Liquid,
-            Material::Sand => StateOfMatter::Liquid,
-            Material::Bedrock => StateOfMatter::Solid,
-            })
-        })
-        .insert_resource({
-            MaterialFlowing(enum_map! {
-            Material::Air => false,
-            Material::Water => true,
-            Material::Sand => false,
-            Material::Bedrock => false,
-            })
-        })
         .insert_resource(FallingSandRng(StdRng::seed_from_u64(0)))
         .add_systems(Startup, setup)
         .add_systems(
             FixedUpdate,
             (
-                (clean_particles, fall, flow, grid_to_texture).chain(),
+                (
+                    clean_particles,
+                    fall,
+                    flow,
+                    react,
+                    fire_to_smoke,
+                    grid_to_texture,
+                )
+                    .chain(),
                 draw_debug_gizmoz,
             ),
         );
@@ -127,9 +115,6 @@ impl FallingSandGrid {
     }
 
     pub fn swap_particles(&mut self, a: (i32, i32), b: (i32, i32)) {
-        self.particles
-            .array_mut()
-            .swap((a.0 as usize, a.1 as usize), (b.0 as usize, b.1 as usize));
         // Mark the particles as dirty
         *self
             .particle_dirty
@@ -139,6 +124,10 @@ impl FallingSandGrid {
             .particle_dirty
             .get_mut(self.get(b.0, b.1).unwrap().id)
             .unwrap() = true;
+        // Swap the particles
+        self.particles
+            .array_mut()
+            .swap((a.0 as usize, a.1 as usize), (b.0 as usize, b.1 as usize));
     }
 
     pub fn get(&self, x: i32, y: i32) -> Option<&Particle> {
@@ -147,6 +136,13 @@ impl FallingSandGrid {
 
     pub fn get_mut(&mut self, x: i32, y: i32) -> Option<&mut Particle> {
         self.particles.array_mut().get_mut((x as usize, y as usize))
+    }
+
+    pub fn set(&mut self, x: i32, y: i32, material: Material) {
+        let particle = self.get_mut(x, y).unwrap();
+        particle.material = material;
+        let particle_id = particle.id;
+        *self.particle_dirty.get_mut(particle_id).unwrap() = true;
     }
 }
 
@@ -384,6 +380,7 @@ pub fn setup(
     mut commands: Commands,
     mut images: ResMut<Assets<Image>>,
     falling_sand_settings: Res<FallingSandSettings>,
+    material_colors: Res<MaterialColor>,
 ) {
     let size = (
         falling_sand_settings.size.0 as u32,
@@ -398,64 +395,8 @@ pub fn setup(
 
     falling_sand_grid.get_mut(9, 9).unwrap().material = Material::Bedrock;
 
-    // Create the particle grid texture
-    let mut grid_image = Image::new_fill(
-        Extent3d {
-            width: size.0,
-            height: size.1,
-            depth_or_array_layers: 1,
-        },
-        TextureDimension::D2,
-        &[0u8; 16],
-        TextureFormat::Rg32Uint,
-    );
-    grid_image.texture_descriptor.usage =
-        TextureUsages::COPY_DST | TextureUsages::STORAGE_BINDING | TextureUsages::TEXTURE_BINDING;
-    grid_image.texture_descriptor.label = Some("grid_texture");
-
-    grid_image.data.copy_from_slice(cast_slice(
-        falling_sand_grid.particles.array().as_slice().unwrap(),
-    ));
-
-    // Create the color map texture
-    let material_colors = vec![
-        255u8, 255u8, 255u8, 255u8, // Air
-        77, 77, 77, 255u8, // Bedrock
-        244, 215, 21, 255u8, // Sand
-        0, 0, 255, 255u8, // Water
-    ];
-    let mut color_map_image = Image::new(
-        Extent3d {
-            height: 1,
-            width: 4,
-            depth_or_array_layers: 1,
-        },
-        TextureDimension::D1,
-        material_colors,
-        TextureFormat::Rgba8Unorm,
-    );
-    color_map_image.texture_descriptor.usage =
-        TextureUsages::COPY_DST | TextureUsages::STORAGE_BINDING | TextureUsages::TEXTURE_BINDING;
-    color_map_image.texture_descriptor.label = Some("color_map_texture");
-
-    // Create the render target texture
-    let mut render_target = Image::new_fill(
-        Extent3d {
-            width: size.0,
-            height: size.1,
-            depth_or_array_layers: 1,
-        },
-        TextureDimension::D2,
-        &[0, 0, 0, 255],
-        TextureFormat::Rgba8Unorm,
-    );
-    render_target.texture_descriptor.usage =
-        TextureUsages::COPY_DST | TextureUsages::STORAGE_BINDING | TextureUsages::TEXTURE_BINDING;
-
-    // Add the textures to the asset server and get the handles
-    let grid_texture = images.add(grid_image);
-    let color_map_image = images.add(color_map_image);
-    let color_image = images.add(render_target);
+    let (grid_texture, color_map_image, color_image) =
+        create_grid_images(size, &falling_sand_grid, &material_colors, &mut images);
 
     let scale = falling_sand_settings.tile_size;
 
@@ -482,4 +423,69 @@ pub fn setup(
         color_map: color_map_image,
         color_texture: color_image,
     });
+}
+
+fn create_grid_images(
+    size: (u32, u32),
+    falling_sand_grid: &FallingSandGrid,
+    material_colors: &MaterialColor,
+    images: &mut Assets<Image>,
+) -> (Handle<Image>, Handle<Image>, Handle<Image>) {
+    // Create the particle grid texture
+    let mut grid_image = Image::new_fill(
+        Extent3d {
+            width: size.0,
+            height: size.1,
+            depth_or_array_layers: 1,
+        },
+        TextureDimension::D2,
+        &[0u8; 16],
+        TextureFormat::Rg32Uint,
+    );
+    grid_image.texture_descriptor.usage =
+        TextureUsages::COPY_DST | TextureUsages::STORAGE_BINDING | TextureUsages::TEXTURE_BINDING;
+    grid_image.texture_descriptor.label = Some("grid_texture");
+
+    grid_image.data.copy_from_slice(cast_slice(
+        falling_sand_grid.particles.array().as_slice().unwrap(),
+    ));
+
+    let material_colors_vec = MaterialIterator::new()
+        .map(|m| material_colors.0[m])
+        .flat_map(|c| [c[0], c[1], c[2], 255u8])
+        .collect::<Vec<u8>>();
+
+    let mut color_map_image = Image::new(
+        Extent3d {
+            height: 1,
+            width: material_colors.0.len() as u32,
+            depth_or_array_layers: 1,
+        },
+        TextureDimension::D1,
+        material_colors_vec,
+        TextureFormat::Rgba8Unorm,
+    );
+    color_map_image.texture_descriptor.usage =
+        TextureUsages::COPY_DST | TextureUsages::STORAGE_BINDING | TextureUsages::TEXTURE_BINDING;
+    color_map_image.texture_descriptor.label = Some("color_map_texture");
+
+    // Create the render target texture
+    let mut render_target = Image::new_fill(
+        Extent3d {
+            width: size.0,
+            height: size.1,
+            depth_or_array_layers: 1,
+        },
+        TextureDimension::D2,
+        &[0, 0, 0, 255],
+        TextureFormat::Rgba8Unorm,
+    );
+    render_target.texture_descriptor.usage =
+        TextureUsages::COPY_DST | TextureUsages::STORAGE_BINDING | TextureUsages::TEXTURE_BINDING;
+
+    // Add the textures to the asset server and get the handles
+    let grid_texture = images.add(grid_image);
+    let color_map_image = images.add(color_map_image);
+    let color_image = images.add(render_target);
+    (grid_texture, color_map_image, color_image)
 }

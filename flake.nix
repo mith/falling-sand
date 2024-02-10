@@ -81,6 +81,7 @@
               src = falling-sand-src;
               CARGO_BUILD_TARGET = target;
               CARGO_PROFILE = "release";
+              RUSTFLAGS = "--cfg=web_sys_unstable_apis";
               inherit nativeBuildInputs;
               doCheck = false;
             };
@@ -92,7 +93,7 @@
               name = "falling-sand-web";
               src = ./.;
               nativeBuildInputs = [
-                local.wasm-bindgen-cli
+                pkgs.wasm-bindgen-cli
                 pkgs.binaryen
               ];
               phases = ["unpackPhase" "installPhase"];

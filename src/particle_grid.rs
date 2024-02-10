@@ -3,7 +3,7 @@ use bevy::reflect::Reflect;
 use bytemuck::NoUninit;
 use ndarray::prelude::*;
 
-use crate::types::Material;
+use crate::material::Material;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Reflect, NoUninit)]
 #[repr(C)]
