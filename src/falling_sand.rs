@@ -20,11 +20,12 @@ use bevy::render::renderer::RenderDevice;
 use bevy::render::{render_graph, RenderApp, RenderSet};
 
 use bytemuck::cast_slice;
+use rand::{rngs::StdRng, SeedableRng};
 
 use crate::{
-    movement::{gravity, move_particles},
-    particle_grid::{ParticleAttributeStore, ParticleGrid},
-    types::{Material, MaterialDensities, MaterialStates, ParticleVelocity, StateOfMatter},
+    movement::{fall, flow},
+    particle_grid::{Particle, ParticleAttributeStore, ParticleGrid},
+    types::{Material, MaterialDensities, MaterialFlowing, MaterialStates, StateOfMatter},
 };
 
 #[derive(Default)]
@@ -34,6 +35,9 @@ pub struct FallingSandPlugin {
 
 #[derive(SystemSet, Default, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct FallingSandSet;
+
+#[derive(Resource)]
+pub struct FallingSandRng(pub StdRng);
 
 impl Plugin for FallingSandPlugin {
     fn build(&self, app: &mut App) {
@@ -61,11 +65,20 @@ impl Plugin for FallingSandPlugin {
             Material::Bedrock => StateOfMatter::Solid,
             })
         })
+        .insert_resource({
+            MaterialFlowing(enum_map! {
+            Material::Air => false,
+            Material::Water => true,
+            Material::Sand => false,
+            Material::Bedrock => false,
+            })
+        })
+        .insert_resource(FallingSandRng(StdRng::seed_from_u64(0)))
         .add_systems(Startup, setup)
         .add_systems(
-            Update,
+            FixedUpdate,
             (
-                (clean_particles, gravity, move_particles, grid_to_texture).chain(),
+                (clean_particles, fall, flow, grid_to_texture).chain(),
                 draw_debug_gizmoz,
             ),
         );
@@ -89,35 +102,51 @@ impl Plugin for FallingSandPlugin {
         render_app.init_resource::<FallingSandPipeline>();
     }
 }
+
 #[derive(Component)]
 pub struct FallingSandGrid {
     pub particles: ParticleGrid,
     pub particle_dirty: ParticleAttributeStore<bool>,
-    pub particle_velocities: ParticleAttributeStore<ParticleVelocity>,
-    pub particle_positions: ParticleAttributeStore<Vec2>,
 }
 
 impl FallingSandGrid {
     pub fn new(size: (usize, usize)) -> FallingSandGrid {
         let particle_grid = ParticleGrid::new(size);
-        let size = particle_grid.grid().len();
-        let mut particle_positions = ParticleAttributeStore::new(size);
-        for (i, particle) in particle_grid.grid().indexed_iter() {
-            *particle_positions.get_mut(particle.id).unwrap() = Vec2::new(i.0 as f32, i.1 as f32);
-        }
+        let size = particle_grid.array().len();
         FallingSandGrid {
             particles: particle_grid,
             particle_dirty: ParticleAttributeStore::new(size),
-            particle_velocities: ParticleAttributeStore::new(size),
-            particle_positions,
         }
     }
 
     pub fn size(&self) -> IVec2 {
         IVec2::new(
-            self.particles.grid().dim().0 as i32,
-            self.particles.grid().dim().1 as i32,
+            self.particles.array().dim().0 as i32,
+            self.particles.array().dim().1 as i32,
         )
+    }
+
+    pub fn swap_particles(&mut self, a: (i32, i32), b: (i32, i32)) {
+        self.particles
+            .array_mut()
+            .swap((a.0 as usize, a.1 as usize), (b.0 as usize, b.1 as usize));
+        // Mark the particles as dirty
+        *self
+            .particle_dirty
+            .get_mut(self.get(a.0, a.1).unwrap().id)
+            .unwrap() = true;
+        *self
+            .particle_dirty
+            .get_mut(self.get(b.0, b.1).unwrap().id)
+            .unwrap() = true;
+    }
+
+    pub fn get(&self, x: i32, y: i32) -> Option<&Particle> {
+        self.particles.array().get((x as usize, y as usize))
+    }
+
+    pub fn get_mut(&mut self, x: i32, y: i32) -> Option<&mut Particle> {
+        self.particles.array_mut().get_mut((x as usize, y as usize))
     }
 }
 
@@ -143,7 +172,7 @@ pub fn grid_to_texture(
         if let Some(materials_texture) = textures.get_mut(&falling_sand.materials_texture) {
             materials_texture.data.copy_from_slice(cast_slice(
                 grid.particles
-                    .grid()
+                    .array()
                     .as_slice()
                     .expect("Failed to get slice from grid"),
             ));
@@ -363,26 +392,11 @@ pub fn setup(
 
     let mut falling_sand_grid = FallingSandGrid::new((size.0 as usize, size.1 as usize));
 
-    falling_sand_grid
-        .particles
-        .grid_mut()
-        .get_mut((0, 0))
-        .unwrap()
-        .material = Material::Sand;
+    falling_sand_grid.get_mut(0, 0).unwrap().material = Material::Sand;
 
-    falling_sand_grid
-        .particles
-        .grid_mut()
-        .get_mut((9, 0))
-        .unwrap()
-        .material = Material::Water;
+    falling_sand_grid.get_mut(9, 0).unwrap().material = Material::Water;
 
-    falling_sand_grid
-        .particles
-        .grid_mut()
-        .get_mut((9, 9))
-        .unwrap()
-        .material = Material::Bedrock;
+    falling_sand_grid.get_mut(9, 9).unwrap().material = Material::Bedrock;
 
     // Create the particle grid texture
     let mut grid_image = Image::new_fill(
@@ -400,7 +414,7 @@ pub fn setup(
     grid_image.texture_descriptor.label = Some("grid_texture");
 
     grid_image.data.copy_from_slice(cast_slice(
-        falling_sand_grid.particles.grid().as_slice().unwrap(),
+        falling_sand_grid.particles.array().as_slice().unwrap(),
     ));
 
     // Create the color map texture

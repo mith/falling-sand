@@ -1,12 +1,7 @@
-use std::borrow::Borrow;
-
-use bevy::{
-    prelude::{Deref, DerefMut},
-    reflect::Reflect,
-};
+use bevy::reflect::Reflect;
 
 use bytemuck::NoUninit;
-use ndarray::{prelude::*, MathCell};
+use ndarray::prelude::*;
 
 use crate::types::Material;
 
@@ -34,12 +29,12 @@ impl Particle {
 pub struct ParticleGrid(Array2<Particle>);
 
 impl ParticleGrid {
-    pub fn grid(&self) -> ArrayView2<Particle> {
-        self.0.view()
+    pub fn array(&self) -> &Array2<Particle> {
+        &self.0
     }
 
-    pub fn grid_mut(&mut self) -> ArrayViewMut2<Particle> {
-        self.0.view_mut()
+    pub fn array_mut(&mut self) -> &mut Array2<Particle> {
+        &mut self.0
     }
 }
 
@@ -60,6 +55,12 @@ impl<T: Default + Clone> ParticleAttributeStore<T> {
     pub fn new(size: usize) -> ParticleAttributeStore<T> {
         ParticleAttributeStore {
             data: vec![T::default(); size],
+        }
+    }
+
+    pub fn new_with_value(size: usize, value: T) -> ParticleAttributeStore<T> {
+        ParticleAttributeStore {
+            data: vec![value; size],
         }
     }
 

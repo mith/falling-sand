@@ -197,14 +197,14 @@ fn draw_tool_system(
     for (mut grid, _grid_transform) in grid_query.iter_mut() {
         let Some(tile_position) = get_tile_at_world_position(
             cursor_world_position.position(),
-            grid.particles.grid().dim(),
+            grid.size(),
             falling_sand_settings.tile_size,
         ) else {
             continue;
         };
         if let Some(cell) = grid
             .particles
-            .grid_mut()
+            .array_mut()
             .get_mut((tile_position.x as usize, tile_position.y as usize))
         {
             if cell.material != Material::Bedrock {
@@ -216,12 +216,12 @@ fn draw_tool_system(
 
 fn get_tile_at_world_position(
     cursor_position: Vec2,
-    grid_size: (usize, usize),
+    grid_size: IVec2,
     tile_size: u32,
 ) -> Option<IVec2> {
-    let x = (cursor_position.x / tile_size as f32 + grid_size.0 as f32 / 2.0) as i32;
-    let y = (cursor_position.y / tile_size as f32 + grid_size.1 as f32 / 2.0) as i32;
-    if x >= 0 && x < grid_size.0 as i32 && y >= 0 && y < grid_size.1 as i32 {
+    let x = (cursor_position.x / tile_size as f32 + grid_size.x as f32 / 2.0) as i32;
+    let y = (cursor_position.y / tile_size as f32 + grid_size.y as f32 / 2.0) as i32;
+    if x >= 0 && x < grid_size.x && y >= 0 && y < grid_size.y {
         Some(IVec2::new(x, y))
     } else {
         None
@@ -234,7 +234,7 @@ mod test {
 
     #[test]
     fn test_get_tile_position_under_cursor() {
-        let grid_size = (10, 10);
+        let grid_size = IVec2::new(10, 10);
         let tile_size = 1;
 
         let cursor_position = Vec2::new(0., 0.);

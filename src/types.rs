@@ -51,3 +51,6 @@ pub struct MaterialStates(pub EnumMap<Material, StateOfMatter>);
 
 #[derive(Default, Clone)]
 pub struct ParticleVelocity(pub Vec2);
+
+#[derive(Resource, Deref)]
+pub struct MaterialFlowing(pub EnumMap<Material, bool>);

@@ -23,16 +23,5 @@ fn time_control(mut egui_contexts: EguiContexts, mut time: ResMut<Time<Virtual>>
                 time.pause();
             }
         }
-
-        ui.label(format!("Speed: {}", time.relative_speed()));
-        if ui.button("Slower").clicked() {
-            let ratio = time.relative_speed() / 2.0;
-            time.set_relative_speed(ratio);
-        }
-
-        if ui.button("Faster").clicked() {
-            let ratio = time.relative_speed() * 2.0;
-            time.set_relative_speed(ratio);
-        }
     });
 }
