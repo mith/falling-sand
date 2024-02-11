@@ -18,28 +18,10 @@ impl<'a> Iterator for ExtendedCheckerboardIterator<'a> {
 
         let mut set = HashSet::new();
         for &pos in self.grid.active_chunks().iter() {
-            match self.iteration {
-                0 => {
-                    if pos.x % 2 == 0 && pos.y % 2 == 0 {
-                        set.insert(pos);
-                    }
-                }
-                1 => {
-                    if pos.x % 2 == 1 && pos.y % 2 == 0 {
-                        set.insert(pos);
-                    }
-                }
-                2 => {
-                    if pos.x % 2 == 0 && pos.y % 2 == 1 {
-                        set.insert(pos);
-                    }
-                }
-                3 => {
-                    if pos.x % 2 == 1 && pos.y % 2 == 1 {
-                        set.insert(pos);
-                    }
-                }
-                _ => unreachable!(),
+            let set_index = (pos.x % 2) + (pos.y % 2) * 2;
+
+            if set_index == self.iteration {
+                set.insert(pos);
             }
         }
 
