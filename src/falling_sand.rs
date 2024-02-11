@@ -62,6 +62,7 @@ impl Plugin for FallingSandPlugin {
                     clean_particles,
                     fall,
                     flow,
+                    clean_particles,
                     react,
                     fire_to_smoke,
                     grid_to_texture,
@@ -92,16 +93,16 @@ impl Plugin for FallingSandPlugin {
 }
 
 #[derive(Component)]
-pub struct FallingSandGrid {
+pub struct Chunk {
     pub particles: ParticleGrid,
     pub particle_dirty: ParticleAttributeStore<bool>,
 }
 
-impl FallingSandGrid {
-    pub fn new(size: (usize, usize)) -> FallingSandGrid {
+impl Chunk {
+    pub fn new(size: (usize, usize)) -> Chunk {
         let particle_grid = ParticleGrid::new(size);
         let size = particle_grid.array().len();
-        FallingSandGrid {
+        Chunk {
             particles: particle_grid,
             particle_dirty: ParticleAttributeStore::new(size),
         }
@@ -146,7 +147,7 @@ impl FallingSandGrid {
     }
 }
 
-pub fn clean_particles(mut grid_query: Query<&mut FallingSandGrid>) {
+pub fn clean_particles(mut grid_query: Query<&mut Chunk>) {
     for mut grid in grid_query.iter_mut() {
         for dirty in grid.particle_dirty.iter_mut() {
             *dirty = false;
@@ -161,7 +162,7 @@ pub struct FallingSandSprite {
 }
 
 pub fn grid_to_texture(
-    falling_sand: Query<(&FallingSandSprite, &FallingSandGrid)>,
+    falling_sand: Query<(&FallingSandSprite, &Chunk)>,
     mut textures: ResMut<Assets<Image>>,
 ) {
     for (falling_sand, grid) in &falling_sand {
@@ -387,7 +388,7 @@ pub fn setup(
         falling_sand_settings.size.1 as u32,
     );
 
-    let mut falling_sand_grid = FallingSandGrid::new((size.0 as usize, size.1 as usize));
+    let mut falling_sand_grid = Chunk::new((size.0 as usize, size.1 as usize));
 
     falling_sand_grid.get_mut(0, 0).unwrap().material = Material::Sand;
 
@@ -427,7 +428,7 @@ pub fn setup(
 
 fn create_grid_images(
     size: (u32, u32),
-    falling_sand_grid: &FallingSandGrid,
+    falling_sand_grid: &Chunk,
     material_colors: &MaterialColor,
     images: &mut Assets<Image>,
 ) -> (Handle<Image>, Handle<Image>, Handle<Image>) {

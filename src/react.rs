@@ -5,12 +5,12 @@ use bevy::{
 use rand::{seq::SliceRandom, Rng};
 
 use crate::{
-    falling_sand::{FallingSandGrid, FallingSandRng},
+    falling_sand::{Chunk, FallingSandRng},
     material::{Material, MaterialReactions},
 };
 
 pub fn react(
-    mut grid_query: Query<&mut FallingSandGrid>,
+    mut grid_query: Query<&mut Chunk>,
     material_reactions: Res<MaterialReactions>,
     mut rng: ResMut<FallingSandRng>,
 ) {
@@ -31,6 +31,9 @@ pub fn react(
                                 continue;
                             }
                             if let Some(adjacent_particle) = grid.get(x + dx, y + dy) {
+                                if *grid.particle_dirty.get(adjacent_particle.id).unwrap() {
+                                    continue;
+                                }
                                 if let Some(reaction) = material_reactions[particle.material]
                                     [adjacent_particle.material]
                                     .as_ref()

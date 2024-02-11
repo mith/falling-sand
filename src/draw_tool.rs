@@ -11,10 +11,11 @@ use bevy::{
     transform::components::GlobalTransform,
     utils::HashMap,
 };
+use line_drawing::Bresenham;
 
 use crate::{
     cursor_world_position::CursorWorldPosition,
-    falling_sand::{FallingSandGrid, FallingSandSet, FallingSandSettings},
+    falling_sand::{Chunk, FallingSandSet, FallingSandSettings},
     material::Material,
 };
 
@@ -47,6 +48,7 @@ fn switch_tool_system(mut tool_state: ResMut<ToolState>, keyboard_input: Res<Inp
         (KeyCode::Key3, Material::Fire),
         (KeyCode::Key4, Material::Wood),
         (KeyCode::Key5, Material::Bedrock),
+        (KeyCode::Key6, Material::Oil),
     ]);
     if let Some(material) = keyboard_input
         .get_pressed()
@@ -64,29 +66,44 @@ impl Default for DrawTimer {
     }
 }
 
+#[derive(Default)]
+struct LastDrawPosition(Option<IVec2>);
+
 fn draw_tool_system(
-    mut grid_query: Query<(&mut FallingSandGrid, &GlobalTransform)>,
+    mut grid_query: Query<&mut Chunk>,
     mouse_button_input: Res<Input<MouseButton>>,
     tool_state: Res<ToolState>,
     cursor_tile_position: Res<CursorTilePosition>,
     mut timer: Local<DrawTimer>,
     time: Res<Time>,
+    mut last_draw_position: Local<LastDrawPosition>,
 ) {
     if !mouse_button_input.pressed(MouseButton::Left) {
+        last_draw_position.0 = None;
         return;
     }
 
+    let Some(current_tile_pos) = cursor_tile_position.0 else {
+        return;
+    };
+
     if timer.0.tick(time.delta()).just_finished() || cursor_tile_position.is_changed() {
-        for (mut grid, _grid_transform) in grid_query.iter_mut() {
-            if let Some(cell) = cursor_tile_position.0.and_then(|ctp| {
-                grid.particles
-                    .array_mut()
-                    .get_mut((ctp.x as usize, ctp.y as usize))
-            }) {
-                if cell.material != Material::Bedrock {
+        for mut grid in grid_query.iter_mut() {
+            let mut draw_to_cell = |x: i32, y: i32| {
+                if let Some(cell) = grid.particles.array_mut().get_mut((x as usize, y as usize)) {
                     cell.material = tool_state.draw_type;
                 }
+            };
+            let start_pos = last_draw_position.0.unwrap_or(current_tile_pos);
+            if start_pos != current_tile_pos {
+                let bresenham = Bresenham::new(start_pos.into(), current_tile_pos.into());
+                for (x, y) in bresenham.skip(1) {
+                    draw_to_cell(x, y);
+                }
+            } else {
+                draw_to_cell(current_tile_pos.x, current_tile_pos.y);
             }
+            last_draw_position.0 = Some(current_tile_pos);
         }
     }
 }
@@ -98,7 +115,7 @@ fn cursor_tile_position_system(
     cursor_world_position: Res<CursorWorldPosition>,
     falling_sand_settings: Res<FallingSandSettings>,
     mut cursor_tile_position: ResMut<CursorTilePosition>,
-    grid_query: Query<&FallingSandGrid>,
+    grid_query: Query<&Chunk>,
 ) {
     for grid in &grid_query {
         let tile_position = get_tile_at_world_position(

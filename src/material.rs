@@ -26,13 +26,14 @@ pub enum Material {
     Smoke = 5,
     Wood = 6,
     Steam = 7,
+    Oil = 8,
 }
 
 unsafe impl Contiguous for Material {
     type Int = u32;
 
     const MIN_VALUE: Self::Int = 0;
-    const MAX_VALUE: Self::Int = 7;
+    const MAX_VALUE: Self::Int = 8;
 }
 
 impl TryFrom<u32> for Material {
@@ -48,6 +49,7 @@ impl TryFrom<u32> for Material {
             5 => Ok(Self::Smoke),
             6 => Ok(Self::Wood),
             7 => Ok(Self::Steam),
+            8 => Ok(Self::Oil),
             _ => Err(()),
         }
     }
@@ -87,13 +89,14 @@ impl Default for MaterialDensities {
     fn default() -> Self {
         MaterialDensities(enum_map! {
             Material::Air => 10,
-            Material::Fire => 2,
+            Material::Fire => 1,
             Material::Smoke => 1,
             Material::Water => 1000,
             Material::Sand => 1600,
             Material::Bedrock => 3000,
             Material::Wood => 500,
             Material::Steam => 1,
+            Material::Oil => 800,
         })
     }
 }
@@ -112,6 +115,7 @@ impl Default for MaterialStates {
             Material::Bedrock => StateOfMatter::Solid,
             Material::Wood => StateOfMatter::Solid,
             Material::Steam => StateOfMatter::Gas,
+            Material::Oil => StateOfMatter::Liquid,
         })
     }
 }
@@ -130,6 +134,7 @@ impl Default for MaterialFlowing {
             Material::Smoke => true,
             Material::Wood => false,
             Material::Steam => true,
+            Material::Oil => true,
         })
     }
 }
@@ -148,6 +153,7 @@ impl Default for MaterialColor {
             Material::Smoke => [128, 128, 128u8],
             Material::Wood => [139, 69, 19u8],
             Material::Steam => [200, 200, 200u8],
+            Material::Oil => [10, 10, 10u8],
         })
     }
 }
@@ -184,6 +190,7 @@ impl Default for MaterialReactions {
                 Material::Smoke => None,
                 Material::Wood => None,
                 Material::Steam => None,
+                Material::Oil => None,
             },
             Material::Bedrock => enum_map! {
                 Material::Air => None,
@@ -194,6 +201,7 @@ impl Default for MaterialReactions {
                 Material::Smoke => None,
                 Material::Wood => None,
                 Material::Steam => None,
+                Material::Oil => None,
             },
             Material::Sand => enum_map! {
                 Material::Air => None,
@@ -204,6 +212,7 @@ impl Default for MaterialReactions {
                 Material::Smoke => None,
                 Material::Wood => None,
                 Material::Steam => None,
+                Material::Oil => None,
             },
             Material::Water => enum_map! {
                 Material::Air => None,
@@ -214,6 +223,7 @@ impl Default for MaterialReactions {
                 Material::Smoke => None,
                 Material::Wood => None,
                 Material::Steam => None,
+                Material::Oil => None,
             },
             Material::Fire => enum_map! {
                 Material::Air => None,
@@ -224,6 +234,7 @@ impl Default for MaterialReactions {
                 Material::Smoke => None,
                 Material::Wood => None,
                 Material::Steam => None,
+                Material::Oil => None,
             },
             Material::Smoke => enum_map! {
                 Material::Air => None,
@@ -234,16 +245,18 @@ impl Default for MaterialReactions {
                 Material::Smoke => None,
                 Material::Wood => None,
                 Material::Steam => None,
+                Material::Oil => None,
             },
             Material::Wood => enum_map! {
                 Material::Air => None,
                 Material::Bedrock => None,
                 Material::Sand => None,
                 Material::Water => None,
-                Material::Fire => Some(Reaction { probability: 10, product_material: Material::Fire }),
+                Material::Fire => Some(Reaction { probability: 15, product_material: Material::Fire }),
                 Material::Smoke => None,
                 Material::Wood => None,
                 Material::Steam => None,
+                Material::Oil => None,
             },
             Material::Steam => enum_map! {
                 Material::Air => None,
@@ -254,6 +267,18 @@ impl Default for MaterialReactions {
                 Material::Smoke => None,
                 Material::Wood => None,
                 Material::Steam => None,
+                Material::Oil => None,
+            },
+            Material::Oil => enum_map! {
+                Material::Air => None,
+                Material::Bedrock => None,
+                Material::Sand => None,
+                Material::Water => None,
+                Material::Fire => Some(Reaction { probability: 30, product_material: Material::Fire }),
+                Material::Smoke => None,
+                Material::Wood => None,
+                Material::Steam => None,
+                Material::Oil => None,
             },
         })
     }
