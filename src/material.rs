@@ -176,14 +176,13 @@ impl Reaction {
 }
 
 #[derive(Resource, Deref)]
-pub struct MaterialReactions(HashMap<Material, HashMap<Material, Option<Reaction>>>);
+pub struct MaterialReactions(HashMap<(Material, Material), Option<Reaction>>);
 
 impl MaterialReactions {
     pub fn get(&self, material: Material, adjacent_material: Material) -> Option<&Reaction> {
         self.0
-            .get(&material)
-            .and_then(|reactions| reactions.get(&adjacent_material))
-            .and_then(|reaction| reaction.as_ref())
+            .get(&(material, adjacent_material))
+            .and_then(|r| r.as_ref())
     }
 }
 
@@ -191,34 +190,25 @@ impl Default for MaterialReactions {
     fn default() -> Self {
         MaterialReactions(HashMap::from([
             (
-                Material::Water,
-                HashMap::from([(
-                    Material::Fire,
-                    Some(Reaction {
-                        probability: 10,
-                        product_material: Material::Steam,
-                    }),
-                )]),
+                (Material::Water, Material::Fire),
+                Some(Reaction {
+                    probability: 10,
+                    product_material: Material::Steam,
+                }),
             ),
             (
-                Material::Wood,
-                HashMap::from([(
-                    Material::Fire,
-                    Some(Reaction {
-                        probability: 15,
-                        product_material: Material::Fire,
-                    }),
-                )]),
+                (Material::Wood, Material::Fire),
+                Some(Reaction {
+                    probability: 15,
+                    product_material: Material::Fire,
+                }),
             ),
             (
-                Material::Oil,
-                HashMap::from([(
-                    Material::Fire,
-                    Some(Reaction {
-                        probability: 40,
-                        product_material: Material::Fire,
-                    }),
-                )]),
+                (Material::Oil, Material::Fire),
+                Some(Reaction {
+                    probability: 40,
+                    product_material: Material::Fire,
+                }),
             ),
         ]))
     }
