@@ -24,6 +24,7 @@ mod pan_zoom_camera;
 mod particle_grid;
 mod react;
 mod time_control;
+mod util;
 
 fn main() {
     let mut app = App::new();

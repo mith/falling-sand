@@ -1,91 +1,198 @@
+use std::mem::MaybeUninit;
+
+use paste::paste;
+
 use bevy::{
-    ecs::component::Component,
+    ecs::{
+        component::Component,
+        entity::Entity,
+        system::{Commands, Query, SystemParam},
+        world::Mut,
+    },
     math::IVec2,
     utils::{hashbrown::HashMap, HashSet},
 };
 
-use crate::{chunk::Chunk, material::Material, particle_grid::Particle};
+use crate::{
+    chunk::Chunk,
+    material::Material,
+    particle_grid::{Particle, ParticleAttributeStore},
+    util::positive_mod,
+};
 
-const CHUNK_SIZE: usize = 64;
+pub const CHUNK_SIZE: i32 = 100;
 
 #[derive(Component)]
-pub struct FallingSandGrid {
-    chunks: HashMap<IVec2, Chunk>,
-    active_chunks: HashSet<IVec2>,
+pub struct ChunkActive;
+
+#[derive(Component)]
+pub struct ChunkPosition(pub IVec2);
+
+pub fn tile_pos_to_chunk_pos(x: i32, y: i32) -> IVec2 {
+    let floor_div = |a: i32, b: i32| {
+        if a < 0 && a % b != 0 {
+            (a / b) - 1
+        } else {
+            a / b
+        }
+    };
+    IVec2::new(floor_div(x, CHUNK_SIZE), floor_div(y, CHUNK_SIZE))
 }
 
-impl FallingSandGrid {
-    pub fn new() -> FallingSandGrid {
-        // Create a 3x3 grid of chunks with a single active chunk at the origin
-        let chunks = HashMap::from([(IVec2::new(0, 0), Chunk::new((CHUNK_SIZE, CHUNK_SIZE)))]);
-        FallingSandGrid {
-            chunks,
-            active_chunks: HashSet::from([IVec2::new(0, 0)]),
-        }
+#[derive(SystemParam)]
+pub struct FallingSandGridQuery<'w, 's> {
+    commands: Commands<'w, 's>,
+    chunks: Query<'w, 's, &'static mut Chunk>,
+    active_chunks: Query<'w, 's, (&'static ChunkActive, &'static ChunkPosition)>,
+    chunk_positions: Query<'w, 's, (Entity, &'static ChunkPosition)>,
+}
+
+impl<'w, 's> FallingSandGridQuery<'w, 's> {
+    pub fn active_chunks(&self) -> HashSet<IVec2> {
+        self.active_chunks.iter().map(|(_, pos)| pos.0).collect()
     }
 
-    pub fn active_chunks(&self) -> &HashSet<IVec2> {
-        &self.active_chunks
+    pub fn chunk_positions(&self) -> HashMap<IVec2, Entity> {
+        self.chunk_positions
+            .iter()
+            .map(|(entity, position)| (position.0, entity))
+            .collect()
     }
 
     pub fn chunk_size(&self) -> IVec2 {
-        IVec2::new(CHUNK_SIZE as i32, CHUNK_SIZE as i32)
+        IVec2::new(CHUNK_SIZE, CHUNK_SIZE)
     }
 
-    pub fn get_chunk(&mut self, x: i32, y: i32) -> &Chunk {
-        if !self.chunks.contains_key(&IVec2::new(x, y)) {
-            self.chunks
-                .insert(IVec2::new(x, y), Chunk::new((CHUNK_SIZE, CHUNK_SIZE)));
-        }
-        self.chunks.get(&IVec2::new(x, y)).unwrap()
+    fn get_chunk(&mut self, x: i32, y: i32) -> &Chunk {
+        let positions = self.chunk_positions();
+        let chunk_entity = positions.get(&IVec2::new(x, y)).unwrap();
+        self.chunks.get(*chunk_entity).unwrap()
     }
 
-    pub fn get_chunk_mut(&mut self, x: i32, y: i32) -> &mut Chunk {
-        if !self.chunks.contains_key(&IVec2::new(x, y)) {
-            self.chunks
-                .insert(IVec2::new(x, y), Chunk::new((CHUNK_SIZE, CHUNK_SIZE)));
+    fn get_chunk_mut(&mut self, x: i32, y: i32) -> Mut<Chunk> {
+        let positions = self.chunk_positions();
+        let chunk_entity = positions.get(&IVec2::new(x, y)).unwrap();
+        self.chunks.get_mut(*chunk_entity).unwrap()
+    }
+
+    fn get_chunks_mut<const N: usize>(&mut self, chunks: &[IVec2; N]) -> [Mut<Chunk>; N] {
+        let mut entities = [(); N].map(|_| MaybeUninit::uninit());
+
+        for (i, pos) in chunks.iter().enumerate() {
+            let chunk_positions = &self.chunk_positions();
+            let chunk_entity = chunk_positions.get(pos).unwrap();
+            entities[i] = MaybeUninit::new(*chunk_entity);
         }
-        self.active_chunks.insert(IVec2::new(x, y));
-        self.chunks.get_mut(&IVec2::new(x, y)).unwrap()
+
+        unsafe {
+            self.chunks
+                .get_many_mut(entities.map(|e| e.assume_init()))
+                .unwrap()
+        }
     }
 
     pub fn get_particle(&mut self, x: i32, y: i32) -> &Particle {
-        self.get_chunk(x / CHUNK_SIZE as i32, y / CHUNK_SIZE as i32)
-            .get(x % CHUNK_SIZE as i32, y % CHUNK_SIZE as i32)
+        let chunk_pos = tile_pos_to_chunk_pos(x, y);
+        let chunk = self.get_chunk(chunk_pos.x, chunk_pos.y);
+        chunk
+            .get(positive_mod(x, CHUNK_SIZE), positive_mod(y, CHUNK_SIZE))
             .unwrap()
     }
 
     pub fn set_particle(&mut self, x: i32, y: i32, material: Material) {
-        let chunk_pos = IVec2::new(x / CHUNK_SIZE as i32, y / CHUNK_SIZE as i32);
+        let chunk_pos = tile_pos_to_chunk_pos(x, y);
         self.get_chunk_mut(chunk_pos.x, chunk_pos.y).set(
-            x % CHUNK_SIZE as i32,
-            y % CHUNK_SIZE as i32,
+            positive_mod(x, CHUNK_SIZE),
+            positive_mod(y, CHUNK_SIZE),
             material,
         );
-        self.active_chunks.insert(chunk_pos);
     }
 
-    pub fn swap_particles(&mut self, a: (i32, i32), b: (i32, i32)) {
-        // If the particles are in the same chunk, we can just swap them
-        if a.0 / CHUNK_SIZE as i32 == b.0 / CHUNK_SIZE as i32
-            && a.1 / CHUNK_SIZE as i32 == b.1 / CHUNK_SIZE as i32
-        {
-            let chunk_pos = IVec2::new(a.0 / CHUNK_SIZE as i32, a.1 / CHUNK_SIZE as i32);
-            let chunk = self.get_chunk_mut(chunk_pos.x, chunk_pos.y);
-            chunk.swap_particles(
-                (a.0 % CHUNK_SIZE as i32, a.1 % CHUNK_SIZE as i32),
-                (b.0 % CHUNK_SIZE as i32, b.1 % CHUNK_SIZE as i32),
-            );
-            self.active_chunks.insert(chunk_pos);
-        } else {
-            // If the particles are in different chunks, we need to move them between chunks
-            let particle_a = *self.get_particle(a.0, a.1);
-            let particle_b = *self.get_particle(b.0, b.1);
+    pub fn get_chunk_active(&mut self, x: i32, y: i32) -> bool {
+        self.active_chunks().contains(&IVec2::new(x, y))
+    }
 
-            self.set_particle(a.0, a.0, particle_b.material);
-            self.set_particle(b.0, b.0, particle_a.material);
+    pub fn set_chunk_active(&mut self, x: i32, y: i32, active: bool) {
+        let positions = self.chunk_positions();
+        let chunk_entity = positions.get(&IVec2::new(x, y)).unwrap();
+        if active {
+            self.commands.entity(*chunk_entity).insert(ChunkActive);
+        } else {
+            self.commands.entity(*chunk_entity).remove::<ChunkActive>();
         }
     }
+}
+
+macro_rules! define_attributes_and_swap {
+    ($($attr:ident: $type:ty),* $(,)?) => {
+        pub struct ParticleAttributes {
+            $(pub $attr: ParticleAttributeStore<$type>,)*
+        }
+
+        impl ParticleAttributes {
+            pub fn new(size: usize) -> Self {
+                ParticleAttributes {
+                    $($attr: ParticleAttributeStore::new(size),)*
+                }
+            }
+        }
+
+        impl<'w, 's> FallingSandGridQuery<'w, 's> {
+            pub fn swap_particles(&mut self, a: (i32, i32), b: (i32, i32)) {
+                let chunk_a_pos = tile_pos_to_chunk_pos(a.0, a.1);
+                let chunk_b_pos = tile_pos_to_chunk_pos(b.0, b.1);
+
+                let particle_pos_a = (positive_mod(a.0, CHUNK_SIZE), positive_mod(a.1, CHUNK_SIZE));
+                let particle_pos_b = (positive_mod(b.0, CHUNK_SIZE), positive_mod(b.1, CHUNK_SIZE));
+
+                if chunk_a_pos == chunk_b_pos {
+                    let mut chunk = self.get_chunk_mut(chunk_a_pos.x, chunk_a_pos.y);
+                    chunk.swap_particles(
+                        particle_pos_a,
+                        particle_pos_b
+                    );
+                    // self.set_chunk_active(chunk_a_pos.x, chunk_a_pos.y, true);
+                } else {
+                    let [mut chunk_a, mut chunk_b] = self.get_chunks_mut(&[chunk_a_pos, chunk_b_pos]);
+
+                    let particle_a_id = chunk_a.get(particle_pos_a.0, particle_pos_a.1).unwrap().id;
+                    let particle_b_id = chunk_b.get(particle_pos_b.0, particle_pos_b.1).unwrap().id;
+
+                    $(
+                        std::mem::swap(
+                            chunk_a.attributes_mut().$attr.get_mut(particle_a_id).unwrap(),
+                            chunk_b.attributes_mut().$attr.get_mut(particle_b_id).unwrap(),
+                        );
+                    )*
+
+                    // self.set_chunk_active(chunk_a_pos.x, chunk_a_pos.y, true);
+                    // self.set_chunk_active(chunk_b_pos.x, chunk_b_pos.y, true);
+                }
+            }
+
+            $(
+                paste! {
+                    pub fn [<get_ $attr>](&mut self, x: i32, y: i32) -> $type {
+                        let chunk_pos = tile_pos_to_chunk_pos(x, y);
+                        let chunk = self.get_chunk(chunk_pos.x, chunk_pos.y);
+                        let particle = chunk.get(positive_mod(x, CHUNK_SIZE), positive_mod(y, CHUNK_SIZE)).unwrap();
+                        *chunk.attributes().$attr.get(particle.id).unwrap()
+                    }
+
+                    pub fn [<set_ $attr>](&mut self, x: i32, y: i32, value: $type) {
+                        let chunk_pos = tile_pos_to_chunk_pos(x, y);
+                        let mut chunk = self.get_chunk_mut(chunk_pos.x, chunk_pos.y);
+                        let particle = *chunk.get_mut(positive_mod(x, CHUNK_SIZE), positive_mod(y, CHUNK_SIZE)).unwrap();
+                        chunk.attributes_mut().$attr.set(particle.id, value);
+                    }
+                }
+            )*
+        }
+    };
+}
+
+define_attributes_and_swap! {
+    dirty: bool,
 }
 
 #[cfg(test)]
@@ -93,34 +200,11 @@ mod test {
     use super::*;
 
     #[test]
-    fn test_falling_sand_grid() {
-        let mut grid = FallingSandGrid::new();
-        assert_eq!(grid.get_particle(0, 0).material, Material::Air);
-        grid.set_particle(0, 0, Material::Sand);
-        assert_eq!(grid.get_particle(0, 0).material, Material::Sand);
-        grid.swap_particles((0, 0), (1, 1));
-        assert_eq!(grid.get_particle(0, 0).material, Material::Air);
-        assert_eq!(grid.get_particle(1, 1).material, Material::Sand);
-    }
-
-    #[test]
-    fn test_falling_sand_grid_swap_across_chunks() {
-        let mut grid = FallingSandGrid::new();
-        assert_eq!(grid.get_particle(0, 0).material, Material::Air);
-        grid.set_particle(0, 0, Material::Sand);
-        assert_eq!(grid.get_particle(0, 0).material, Material::Sand);
-        grid.set_particle(CHUNK_SIZE as i32, CHUNK_SIZE as i32, Material::Water);
-        assert_eq!(
-            grid.get_particle(CHUNK_SIZE as i32, CHUNK_SIZE as i32)
-                .material,
-            Material::Water
-        );
-        grid.swap_particles((0, 0), (CHUNK_SIZE as i32, CHUNK_SIZE as i32));
-        assert_eq!(grid.get_particle(0, 0).material, Material::Water);
-        assert_eq!(
-            grid.get_particle(CHUNK_SIZE as i32, CHUNK_SIZE as i32)
-                .material,
-            Material::Sand
-        );
+    fn test_tile_pos_to_chunk_pos() {
+        assert_eq!(tile_pos_to_chunk_pos(0, 0), IVec2::new(0, 0));
+        assert_eq!(tile_pos_to_chunk_pos(63, 63), IVec2::new(0, 0));
+        assert_eq!(tile_pos_to_chunk_pos(64, 64), IVec2::new(1, 1));
+        assert_eq!(tile_pos_to_chunk_pos(65, 65), IVec2::new(1, 1));
+        assert_eq!(tile_pos_to_chunk_pos(0, -1), IVec2::new(0, -1));
     }
 }

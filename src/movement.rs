@@ -1,13 +1,58 @@
-use rand::Rng;
+use rand::{rngs::StdRng, Rng};
 
-use bevy::ecs::system::{Query, Res, ResMut};
+use bevy::{
+    ecs::system::{Query, Res, ResMut},
+    math::IVec2,
+    utils::HashSet,
+};
 
 use crate::{
     chunk::Chunk,
     falling_sand::FallingSandRng,
+    falling_sand_grid::FallingSandGridQuery,
     material::{MaterialDensities, MaterialFlowing, MaterialStates, StateOfMatter},
     particle_grid::Particle,
 };
+
+pub fn fall_2(
+    mut grid: FallingSandGridQuery,
+    material_states: Res<MaterialStates>,
+    material_densities: Res<MaterialDensities>,
+    mut rng: ResMut<FallingSandRng>,
+) {
+    for pos in grid.active_chunks() {
+        let chunk_size = grid.chunk_size();
+        let min_y = pos.y * chunk_size.y;
+        let max_y = (pos.y + 1) * chunk_size.y;
+        for y in min_y..max_y {
+            let min_x = pos.x * chunk_size.x;
+            let max_x = (pos.x + 1) * chunk_size.x;
+            for x in random_dir_range(&mut rng.0, min_x, max_x) {
+                let particle = *grid.get_particle(x, y);
+                let particle_is_dirty: bool = grid.get_dirty(x, y);
+                if material_states[particle.material] == StateOfMatter::Solid || particle_is_dirty {
+                    continue;
+                }
+
+                let mut is_eligible_particle = |(x_b, y_b)| {
+                    let p = *grid.get_particle(x_b, y_b);
+                    material_states[p.material] != StateOfMatter::Solid
+                        && !grid.get_dirty(x_b, y_b)
+                        && p.material != particle.material
+                        && (material_densities[particle.material] > material_densities[p.material]
+                            || material_densities[particle.material]
+                                == material_densities[p.material]
+                                && rng.0.gen_bool(0.01))
+                };
+
+                if is_eligible_particle((x, y - 1)) {
+                    grid.swap_particles((x, y), (x, y - 1));
+                    continue;
+                }
+            }
+        }
+    }
+}
 
 pub fn fall(
     mut grid_query: Query<&mut Chunk>,
@@ -17,10 +62,10 @@ pub fn fall(
 ) {
     for mut grid in grid_query.iter_mut() {
         for y in 1..grid.size().y {
-            let x_iter = x_iter(&mut rng, &grid);
+            let x_iter = x_iter(&mut rng, grid.size().x);
             for x in x_iter {
                 let particle = grid.get(x, y).unwrap();
-                let particle_is_dirty = grid.particle_dirty.get(particle.id).unwrap();
+                let particle_is_dirty = grid.attributes().dirty.get(particle.id).unwrap();
                 if material_states[particle.material] == StateOfMatter::Solid || *particle_is_dirty
                 {
                     continue;
@@ -28,7 +73,7 @@ pub fn fall(
 
                 let mut is_eligible_particle = |p: &Particle| {
                     material_states[p.material] != StateOfMatter::Solid
-                        && !*grid.particle_dirty.get(p.id).unwrap()
+                        && !*grid.attributes().dirty.get(p.id).unwrap()
                         && p.material != particle.material
                         && (material_densities[particle.material] > material_densities[p.material]
                             || material_densities[particle.material]
@@ -106,18 +151,18 @@ pub fn flow(
 ) {
     for mut grid in grid_query.iter_mut() {
         for y in 0..grid.size().y {
-            let x_iter = x_iter(&mut rng, &grid);
+            let x_iter = x_iter(&mut rng, grid.size().x);
 
             for x in x_iter {
                 let particle = grid.get(x, y).unwrap();
-                let particle_is_dirty = grid.particle_dirty.get(particle.id).unwrap();
+                let particle_is_dirty = grid.attributes().dirty.get(particle.id).unwrap();
                 if !material_flowing[particle.material] || *particle_is_dirty {
                     continue;
                 }
 
                 let mut can_flow_into = |p: &Particle| {
                     material_states[p.material] != StateOfMatter::Solid
-                        && !*grid.particle_dirty.get(p.id).unwrap()
+                        && !*grid.attributes().dirty.get(p.id).unwrap()
                         && p.material != particle.material
                         && (material_densities[particle.material] > material_densities[p.material]
                             || material_densities[particle.material]
@@ -166,16 +211,22 @@ pub fn flow(
     }
 }
 
-fn x_iter(
-    rng: &mut ResMut<'_, FallingSandRng>,
-    grid: &bevy::prelude::Mut<'_, Chunk>,
-) -> Box<dyn Iterator<Item = i32>> {
+fn x_iter(rng: &mut ResMut<'_, FallingSandRng>, max: i32) -> Box<dyn Iterator<Item = i32>> {
     let reverse_x = rng.0.gen_bool(0.5);
     // 50% chance to reverse the iteration order of x
     let x_iter: Box<dyn Iterator<Item = i32>> = if reverse_x {
-        Box::new((0..grid.size().x).rev())
+        Box::new((0..max).rev())
     } else {
-        Box::new(0..grid.size().x)
+        Box::new(0..max)
     };
     x_iter
+}
+
+fn random_dir_range(rng: &mut StdRng, min: i32, max: i32) -> Box<dyn Iterator<Item = i32>> {
+    let reverse = rng.gen_bool(0.5);
+    if reverse {
+        Box::new((min..max).rev())
+    } else {
+        Box::new(min..max)
+    }
 }

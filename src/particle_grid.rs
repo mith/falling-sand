@@ -66,6 +66,10 @@ impl<T: Default + Clone> ParticleAttributeStore<T> {
         self.data.get_mut(id.0 as usize)
     }
 
+    pub fn set(&mut self, id: ParticleId, value: T) {
+        self.data[id.0 as usize] = value;
+    }
+
     pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut T> {
         self.data.iter_mut()
     }

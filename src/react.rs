@@ -19,7 +19,7 @@ pub fn react(
         for x in random_dir_range(&mut rng, grid.size().x) {
             for y in random_dir_range(&mut rng, grid.size().y) {
                 let particle = *grid.get(x, y).unwrap();
-                let particle_is_dirty = *grid.particle_dirty.get(particle.id).unwrap();
+                let particle_is_dirty = *grid.attributes().dirty.get(particle.id).unwrap();
                 if particle_is_dirty {
                     continue;
                 }
@@ -32,7 +32,7 @@ pub fn react(
                                 continue;
                             }
                             if let Some(adjacent_particle) = grid.get(x + dx, y + dy) {
-                                if *grid.particle_dirty.get(adjacent_particle.id).unwrap() {
+                                if *grid.attributes().dirty.get(adjacent_particle.id).unwrap() {
                                     continue;
                                 }
                                 if let Some(reaction) = material_reactions

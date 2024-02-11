@@ -1,14 +1,15 @@
 use bevy::{ecs::component::Component, math::IVec2};
 
 use crate::{
+    falling_sand_grid::ParticleAttributes,
     material::Material,
-    particle_grid::{Particle, ParticleAttributeStore, ParticleGrid},
+    particle_grid::{Particle, ParticleGrid},
 };
 
 #[derive(Component)]
 pub struct Chunk {
     pub particles: ParticleGrid,
-    pub particle_dirty: ParticleAttributeStore<bool>,
+    attributes: ParticleAttributes,
 }
 
 impl Chunk {
@@ -17,8 +18,16 @@ impl Chunk {
         let size = particle_grid.array().len();
         Chunk {
             particles: particle_grid,
-            particle_dirty: ParticleAttributeStore::new(size),
+            attributes: ParticleAttributes::new(size),
         }
+    }
+
+    pub fn attributes(&self) -> &ParticleAttributes {
+        &self.attributes
+    }
+
+    pub fn attributes_mut(&mut self) -> &mut ParticleAttributes {
+        &mut self.attributes
     }
 
     pub fn size(&self) -> IVec2 {
@@ -30,14 +39,7 @@ impl Chunk {
 
     pub fn swap_particles(&mut self, a: (i32, i32), b: (i32, i32)) {
         // Mark the particles as dirty
-        *self
-            .particle_dirty
-            .get_mut(self.get(a.0, a.1).unwrap().id)
-            .unwrap() = true;
-        *self
-            .particle_dirty
-            .get_mut(self.get(b.0, b.1).unwrap().id)
-            .unwrap() = true;
+
         // Swap the particles
         self.particles
             .array_mut()
@@ -56,6 +58,7 @@ impl Chunk {
         let particle = self.get_mut(x, y).unwrap();
         particle.material = material;
         let particle_id = particle.id;
-        *self.particle_dirty.get_mut(particle_id).unwrap() = true;
+        // Mark the particle as dirty
+        self.attributes.dirty.set(particle_id, true);
     }
 }

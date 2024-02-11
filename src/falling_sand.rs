@@ -24,10 +24,11 @@ use rand::{rngs::StdRng, SeedableRng};
 
 use crate::{
     chunk::Chunk,
+    falling_sand_grid::{ChunkActive, ChunkPosition, CHUNK_SIZE},
     fire::fire_to_smoke,
     material::MaterialIterator,
     material::{Material, MaterialColor, MaterialPlugin},
-    movement::{fall, flow},
+    movement::{fall, fall_2, flow},
     react::react,
 };
 
@@ -60,11 +61,11 @@ impl Plugin for FallingSandPlugin {
             (
                 (
                     clean_particles,
-                    fall,
-                    flow,
-                    clean_particles,
-                    react,
-                    fire_to_smoke,
+                    fall_2,
+                    // flow,chunk positions in an extended checkerboard pattern.
+                    // clean_particles,
+                    // react,
+                    // fire_to_smoke,
                     grid_to_texture,
                 )
                     .chain(),
@@ -92,9 +93,9 @@ impl Plugin for FallingSandPlugin {
     }
 }
 
-pub fn clean_particles(mut grid_query: Query<&mut Chunk>) {
-    for mut grid in grid_query.iter_mut() {
-        for dirty in grid.particle_dirty.iter_mut() {
+pub fn clean_particles(mut chunk_query: Query<&mut Chunk>) {
+    for mut grid in chunk_query.iter_mut() {
+        for dirty in grid.attributes_mut().dirty.iter_mut() {
             *dirty = false;
         }
     }
@@ -131,7 +132,7 @@ pub struct FallingSandSettings {
 impl Default for FallingSandSettings {
     fn default() -> Self {
         FallingSandSettings {
-            size: (400, 400),
+            size: (CHUNK_SIZE as usize, CHUNK_SIZE as usize),
             tile_size: 1,
         }
     }
@@ -335,11 +336,7 @@ pub fn setup(
 
     let mut falling_sand_grid = Chunk::new((size.0 as usize, size.1 as usize));
 
-    falling_sand_grid.get_mut(0, 0).unwrap().material = Material::Sand;
-
-    falling_sand_grid.get_mut(9, 0).unwrap().material = Material::Water;
-
-    falling_sand_grid.get_mut(9, 9).unwrap().material = Material::Bedrock;
+    falling_sand_grid.get_mut(32, 32).unwrap().material = Material::Sand;
 
     let (grid_texture, color_map_image, color_image) =
         create_grid_images(size, &falling_sand_grid, &material_colors, &mut images);
@@ -362,7 +359,23 @@ pub fn setup(
             color_map: color_map_image.clone(),
         },
         falling_sand_grid,
+        ChunkPosition(IVec2::new(0, 0)),
+        ChunkActive,
     ));
+
+    // Spawn inactive chunks around chunk (0, 0)
+    for x in -1..=1 {
+        for y in -1..=1 {
+            if x == 0 && y == 0 {
+                continue;
+            }
+            commands.spawn((
+                Name::new("Chunk"),
+                ChunkPosition(IVec2::new(x, y)),
+                Chunk::new((size.0 as usize, size.1 as usize)),
+            ));
+        }
+    }
 
     commands.insert_resource(FallingSandImages {
         grid_texture,
