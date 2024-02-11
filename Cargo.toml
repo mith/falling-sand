@@ -18,8 +18,32 @@ opt-level = 1
 [target.'cfg(target_arch = "wasm32")'.profile.release]
 opt-level = "z"
 
+[dependencies.bevy]
+version = "0.12"
+default-features = false
+features = [
+    "animation",
+    "bevy_asset",
+    "bevy_audio",
+    "bevy_gilrs",
+    "bevy_scene",
+    "bevy_winit",
+    "bevy_core_pipeline",
+    "bevy_render",
+    "bevy_sprite",
+    "bevy_text",
+    "bevy_ui",
+    "multi-threaded",
+    "png",
+    "vorbis",
+    "x11",
+    "bevy_gizmos",
+    "tonemapping_luts",
+    "default_font",
+    "wayland",
+]
+
 [dependencies]
-bevy = { version = "0.12", features = ["wayland" ] }
 ndarray = { version = "0.15.6", features = ["rayon"] }
 enum-map = "2.4.1"
 bytemuck = { version = "1.12.3", features = ["derive"] }

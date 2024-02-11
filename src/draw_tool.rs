@@ -8,14 +8,14 @@ use bevy::{
     input::{keyboard::KeyCode, mouse::MouseButton, Input},
     math::{IVec2, Vec2},
     time::{Time, Timer},
-    transform::components::GlobalTransform,
     utils::HashMap,
 };
 use line_drawing::Bresenham;
 
 use crate::{
+    chunk::Chunk,
     cursor_world_position::CursorWorldPosition,
-    falling_sand::{Chunk, FallingSandSet, FallingSandSettings},
+    falling_sand::{FallingSandSet, FallingSandSettings},
     material::Material,
 };
 

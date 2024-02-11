@@ -11,6 +11,7 @@ use crate::{draw_tool::ToolState, falling_sand::FallingSandPlugin, material::Mat
 use bevy::prelude::*;
 use time_control::TimeControlPlugin;
 
+mod chunk;
 mod cursor_world_position;
 mod draw_tool;
 mod falling_sand;

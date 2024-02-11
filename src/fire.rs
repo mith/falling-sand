@@ -1,10 +1,7 @@
 use bevy::ecs::system::{Query, ResMut};
 use rand::Rng;
 
-use crate::{
-    falling_sand::{Chunk, FallingSandRng},
-    material::Material,
-};
+use crate::{chunk::Chunk, falling_sand::FallingSandRng, material::Material};
 
 pub fn fire_to_smoke(mut grid_query: Query<&mut Chunk>, mut rng: ResMut<FallingSandRng>) {
     for mut grid in grid_query.iter_mut() {

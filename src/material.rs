@@ -1,4 +1,4 @@
-use bevy::prelude::*;
+use bevy::{prelude::*, utils::HashMap};
 
 use bytemuck::{Contiguous, NoUninit};
 use enum_map::EnumMap;
@@ -176,110 +176,50 @@ impl Reaction {
 }
 
 #[derive(Resource, Deref)]
-pub struct MaterialReactions(pub EnumMap<Material, EnumMap<Material, Option<Reaction>>>);
+pub struct MaterialReactions(HashMap<Material, HashMap<Material, Option<Reaction>>>);
+
+impl MaterialReactions {
+    pub fn get(&self, material: Material, adjacent_material: Material) -> Option<&Reaction> {
+        self.0
+            .get(&material)
+            .and_then(|reactions| reactions.get(&adjacent_material))
+            .and_then(|reaction| reaction.as_ref())
+    }
+}
 
 impl Default for MaterialReactions {
     fn default() -> Self {
-        MaterialReactions(enum_map! {
-            Material::Air => enum_map! {
-                Material::Air => None,
-                Material::Bedrock => None,
-                Material::Sand => None,
-                Material::Water => None,
-                Material::Fire => None,
-                Material::Smoke => None,
-                Material::Wood => None,
-                Material::Steam => None,
-                Material::Oil => None,
-            },
-            Material::Bedrock => enum_map! {
-                Material::Air => None,
-                Material::Bedrock => None,
-                Material::Sand => None,
-                Material::Water => None,
-                Material::Fire => None,
-                Material::Smoke => None,
-                Material::Wood => None,
-                Material::Steam => None,
-                Material::Oil => None,
-            },
-            Material::Sand => enum_map! {
-                Material::Air => None,
-                Material::Bedrock => None,
-                Material::Sand => None,
-                Material::Water => None,
-                Material::Fire => None,
-                Material::Smoke => None,
-                Material::Wood => None,
-                Material::Steam => None,
-                Material::Oil => None,
-            },
-            Material::Water => enum_map! {
-                Material::Air => None,
-                Material::Bedrock => None,
-                Material::Sand => None,
-                Material::Water => None,
-                Material::Fire => Some(Reaction { probability: 10, product_material: Material::Steam }),
-                Material::Smoke => None,
-                Material::Wood => None,
-                Material::Steam => None,
-                Material::Oil => None,
-            },
-            Material::Fire => enum_map! {
-                Material::Air => None,
-                Material::Bedrock => None,
-                Material::Sand => None,
-                Material::Water => None,
-                Material::Fire => None,
-                Material::Smoke => None,
-                Material::Wood => None,
-                Material::Steam => None,
-                Material::Oil => None,
-            },
-            Material::Smoke => enum_map! {
-                Material::Air => None,
-                Material::Bedrock => None,
-                Material::Sand => None,
-                Material::Water => None,
-                Material::Fire => None,
-                Material::Smoke => None,
-                Material::Wood => None,
-                Material::Steam => None,
-                Material::Oil => None,
-            },
-            Material::Wood => enum_map! {
-                Material::Air => None,
-                Material::Bedrock => None,
-                Material::Sand => None,
-                Material::Water => None,
-                Material::Fire => Some(Reaction { probability: 15, product_material: Material::Fire }),
-                Material::Smoke => None,
-                Material::Wood => None,
-                Material::Steam => None,
-                Material::Oil => None,
-            },
-            Material::Steam => enum_map! {
-                Material::Air => None,
-                Material::Bedrock => None,
-                Material::Sand => None,
-                Material::Water => None,
-                Material::Fire => None,
-                Material::Smoke => None,
-                Material::Wood => None,
-                Material::Steam => None,
-                Material::Oil => None,
-            },
-            Material::Oil => enum_map! {
-                Material::Air => None,
-                Material::Bedrock => None,
-                Material::Sand => None,
-                Material::Water => None,
-                Material::Fire => Some(Reaction { probability: 30, product_material: Material::Fire }),
-                Material::Smoke => None,
-                Material::Wood => None,
-                Material::Steam => None,
-                Material::Oil => None,
-            },
-        })
+        MaterialReactions(HashMap::from([
+            (
+                Material::Water,
+                HashMap::from([(
+                    Material::Fire,
+                    Some(Reaction {
+                        probability: 10,
+                        product_material: Material::Steam,
+                    }),
+                )]),
+            ),
+            (
+                Material::Wood,
+                HashMap::from([(
+                    Material::Fire,
+                    Some(Reaction {
+                        probability: 15,
+                        product_material: Material::Fire,
+                    }),
+                )]),
+            ),
+            (
+                Material::Oil,
+                HashMap::from([(
+                    Material::Fire,
+                    Some(Reaction {
+                        probability: 40,
+                        product_material: Material::Fire,
+                    }),
+                )]),
+            ),
+        ]))
     }
 }

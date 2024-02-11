@@ -3,8 +3,9 @@ use rand::Rng;
 use bevy::ecs::system::{Query, Res, ResMut};
 
 use crate::{
-    falling_sand::{Chunk, FallingSandRng},
-    material::{Material, MaterialDensities, MaterialFlowing, MaterialStates, StateOfMatter},
+    chunk::Chunk,
+    falling_sand::FallingSandRng,
+    material::{MaterialDensities, MaterialFlowing, MaterialStates, StateOfMatter},
     particle_grid::Particle,
 };
 
@@ -25,11 +26,14 @@ pub fn fall(
                     continue;
                 }
 
-                let is_eligible_particle = |p: &Particle| {
+                let mut is_eligible_particle = |p: &Particle| {
                     material_states[p.material] != StateOfMatter::Solid
                         && !*grid.particle_dirty.get(p.id).unwrap()
                         && p.material != particle.material
-                        && material_densities[particle.material] > material_densities[p.material]
+                        && (material_densities[particle.material] > material_densities[p.material]
+                            || material_densities[particle.material]
+                                == material_densities[p.material]
+                                && rng.0.gen_bool(0.01))
                 };
 
                 let particle_below = grid.get(x, y - 1).unwrap();
@@ -111,16 +115,22 @@ pub fn flow(
                     continue;
                 }
 
+                let mut can_flow_into = |p: &Particle| {
+                    material_states[p.material] != StateOfMatter::Solid
+                        && !*grid.particle_dirty.get(p.id).unwrap()
+                        && p.material != particle.material
+                        && (material_densities[particle.material] > material_densities[p.material]
+                            || material_densities[particle.material]
+                                == material_densities[p.material]
+                                && rng.0.gen_bool(0.01))
+                };
+
                 let can_flow_left = {
                     if x == 0 {
                         false
                     } else {
                         let particle_left = grid.get(x - 1, y).unwrap();
-                        material_states[particle_left.material] != StateOfMatter::Solid
-                            && !*grid.particle_dirty.get(particle_left.id).unwrap()
-                            && particle_left.material != particle.material
-                            && material_densities[particle.material]
-                                > material_densities[particle_left.material]
+                        can_flow_into(particle_left)
                     }
                 };
                 let can_flow_right = {
@@ -128,11 +138,7 @@ pub fn flow(
                         false
                     } else {
                         let particle_right = grid.get(x + 1, y).unwrap();
-                        material_states[particle_right.material] != StateOfMatter::Solid
-                            && !*grid.particle_dirty.get(particle_right.id).unwrap()
-                            && particle_right.material != particle.material
-                            && material_densities[particle.material]
-                                > material_densities[particle_right.material]
+                        can_flow_into(particle_right)
                     }
                 };
 

@@ -12,7 +12,8 @@
                 "args": [
                     "build",
                     "--bin=falling-sand",
-                    "--package=falling-sand"
+                    "--package=falling-sand",
+                    // "--features=bevy/trace_chrome"
                 ],
                 "filter": {
                     "name": "falling-sand",

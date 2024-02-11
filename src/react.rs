@@ -5,7 +5,8 @@ use bevy::{
 use rand::{seq::SliceRandom, Rng};
 
 use crate::{
-    falling_sand::{Chunk, FallingSandRng},
+    chunk::Chunk,
+    falling_sand::FallingSandRng,
     material::{Material, MaterialReactions},
 };
 
@@ -34,8 +35,8 @@ pub fn react(
                                 if *grid.particle_dirty.get(adjacent_particle.id).unwrap() {
                                     continue;
                                 }
-                                if let Some(reaction) = material_reactions[particle.material]
-                                    [adjacent_particle.material]
+                                if let Some(reaction) = material_reactions
+                                    .get(particle.material, adjacent_particle.material)
                                     .as_ref()
                                 {
                                     *nearby_materials

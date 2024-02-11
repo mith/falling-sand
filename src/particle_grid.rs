@@ -58,22 +58,12 @@ impl<T: Default + Clone> ParticleAttributeStore<T> {
         }
     }
 
-    pub fn new_with_value(size: usize, value: T) -> ParticleAttributeStore<T> {
-        ParticleAttributeStore {
-            data: vec![value; size],
-        }
-    }
-
     pub fn get(&self, id: ParticleId) -> Option<&T> {
         self.data.get(id.0 as usize)
     }
 
     pub fn get_mut(&mut self, id: ParticleId) -> Option<&mut T> {
         self.data.get_mut(id.0 as usize)
-    }
-
-    pub fn iter(&self) -> impl Iterator<Item = &T> {
-        self.data.iter()
     }
 
     pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut T> {
