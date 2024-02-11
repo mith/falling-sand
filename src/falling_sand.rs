@@ -131,7 +131,7 @@ pub struct FallingSandSettings {
 impl Default for FallingSandSettings {
     fn default() -> Self {
         FallingSandSettings {
-            size: (100, 100),
+            size: (400, 400),
             tile_size: 1,
         }
     }
