@@ -1,4 +1,8 @@
-use std::{borrow::Cow, time::Duration};
+use std::{
+    borrow::Cow,
+    sync::{Arc, RwLock},
+    time::Duration,
+};
 
 use bevy::{
     prelude::*,
@@ -23,13 +27,15 @@ use bytemuck::cast_slice;
 use rand::{rngs::StdRng, SeedableRng};
 
 use crate::{
-    chunk::Chunk,
-    falling_sand_grid::{ChunkActive, ChunkPosition, CHUNK_SIZE},
+    chunk::{Chunk, ChunkData},
+    falling_sand_grid::{
+        update_chunk_positions, ChunkActive, ChunkPosition, ChunkPositions, CHUNK_SIZE,
+    },
     fire::fire_to_smoke,
     material::MaterialIterator,
     material::{Material, MaterialColor, MaterialPlugin},
-    movement::{fall, fall_2, flow},
-    react::react,
+    movement::{fall, flow},
+    reactions::react,
 };
 
 #[derive(Default)]
@@ -55,17 +61,19 @@ impl Plugin for FallingSandPlugin {
         )))
         .insert_resource(self.settings.clone())
         .insert_resource(FallingSandRng(StdRng::seed_from_u64(0)))
+        .init_resource::<ChunkPositions>()
         .add_systems(Startup, setup)
         .add_systems(
             FixedUpdate,
             (
                 (
+                    update_chunk_positions,
                     clean_particles,
-                    fall_2,
-                    // flow,chunk positions in an extended checkerboard pattern.
-                    // clean_particles,
-                    // react,
-                    // fire_to_smoke,
+                    fall,
+                    flow,
+                    clean_particles,
+                    react,
+                    fire_to_smoke,
                     grid_to_texture,
                 )
                     .chain(),
@@ -95,7 +103,7 @@ impl Plugin for FallingSandPlugin {
 
 pub fn clean_particles(mut chunk_query: Query<&mut Chunk>) {
     for mut grid in chunk_query.iter_mut() {
-        for dirty in grid.attributes_mut().dirty.iter_mut() {
+        for dirty in grid.write().unwrap().attributes_mut().dirty.iter_mut() {
             *dirty = false;
         }
     }
@@ -114,7 +122,9 @@ pub fn grid_to_texture(
     for (falling_sand, grid) in &falling_sand {
         if let Some(materials_texture) = textures.get_mut(&falling_sand.materials_texture) {
             materials_texture.data.copy_from_slice(cast_slice(
-                grid.particles
+                grid.read()
+                    .unwrap()
+                    .particles
                     .array()
                     .as_slice()
                     .expect("Failed to get slice from grid"),
@@ -334,12 +344,20 @@ pub fn setup(
         falling_sand_settings.size.1 as u32,
     );
 
-    let mut falling_sand_grid = Chunk::new((size.0 as usize, size.1 as usize));
+    let mut falling_sand_grid = ChunkData::new((size.0 as usize, size.1 as usize));
 
-    falling_sand_grid.get_mut(32, 32).unwrap().material = Material::Sand;
+    falling_sand_grid.get_particle_mut(32, 32).unwrap().material = Material::Sand;
 
-    let (grid_texture, color_map_image, color_image) =
-        create_grid_images(size, &falling_sand_grid, &material_colors, &mut images);
+    let falling_sand_grid = Arc::new(RwLock::new(falling_sand_grid));
+
+    let chunk = Chunk(falling_sand_grid.clone());
+
+    let (grid_texture, color_map_image, color_image) = create_grid_images(
+        size,
+        &falling_sand_grid.read().unwrap(),
+        &material_colors,
+        &mut images,
+    );
 
     let scale = falling_sand_settings.tile_size;
 
@@ -358,7 +376,7 @@ pub fn setup(
             materials_texture: grid_texture.clone(),
             color_map: color_map_image.clone(),
         },
-        falling_sand_grid,
+        chunk,
         ChunkPosition(IVec2::new(0, 0)),
         ChunkActive,
     ));
@@ -372,7 +390,10 @@ pub fn setup(
             commands.spawn((
                 Name::new("Chunk"),
                 ChunkPosition(IVec2::new(x, y)),
-                Chunk::new((size.0 as usize, size.1 as usize)),
+                Chunk(Arc::new(RwLock::new(ChunkData::new((
+                    size.0 as usize,
+                    size.1 as usize,
+                ))))),
             ));
         }
     }
@@ -386,7 +407,7 @@ pub fn setup(
 
 fn create_grid_images(
     size: (u32, u32),
-    falling_sand_grid: &Chunk,
+    falling_sand_grid: &ChunkData,
     material_colors: &MaterialColor,
     images: &mut Assets<Image>,
 ) -> (Handle<Image>, Handle<Image>, Handle<Image>) {

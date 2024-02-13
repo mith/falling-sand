@@ -16,6 +16,7 @@ use crate::{
     chunk::Chunk,
     cursor_world_position::CursorWorldPosition,
     falling_sand::{FallingSandSet, FallingSandSettings},
+    falling_sand_grid::FallingSandGridQuery,
     material::Material,
 };
 
@@ -70,7 +71,7 @@ impl Default for DrawTimer {
 struct LastDrawPosition(Option<IVec2>);
 
 fn draw_tool_system(
-    mut grid_query: Query<&mut Chunk>,
+    mut grid: FallingSandGridQuery,
     mouse_button_input: Res<Input<MouseButton>>,
     tool_state: Res<ToolState>,
     cursor_tile_position: Res<CursorTilePosition>,
@@ -88,23 +89,19 @@ fn draw_tool_system(
     };
 
     if timer.0.tick(time.delta()).just_finished() || cursor_tile_position.is_changed() {
-        for mut grid in grid_query.iter_mut() {
-            let mut draw_to_cell = |x: i32, y: i32| {
-                if let Some(cell) = grid.particles.array_mut().get_mut((x as usize, y as usize)) {
-                    cell.material = tool_state.draw_type;
-                }
-            };
-            let start_pos = last_draw_position.0.unwrap_or(current_tile_pos);
-            if start_pos != current_tile_pos {
-                let bresenham = Bresenham::new(start_pos.into(), current_tile_pos.into());
-                for (x, y) in bresenham.skip(1) {
-                    draw_to_cell(x, y);
-                }
-            } else {
-                draw_to_cell(current_tile_pos.x, current_tile_pos.y);
+        let mut draw_to_cell = |x: i32, y: i32| {
+            grid.set_particle(x, y, tool_state.draw_type);
+        };
+        let start_pos = last_draw_position.0.unwrap_or(current_tile_pos);
+        if start_pos != current_tile_pos {
+            let bresenham = Bresenham::new(start_pos.into(), current_tile_pos.into());
+            for (x, y) in bresenham.skip(1) {
+                draw_to_cell(x, y);
             }
-            last_draw_position.0 = Some(current_tile_pos);
+        } else {
+            draw_to_cell(current_tile_pos.x, current_tile_pos.y);
         }
+        last_draw_position.0 = Some(current_tile_pos);
     }
 }
 
@@ -120,7 +117,7 @@ fn cursor_tile_position_system(
     for grid in &grid_query {
         let tile_position = get_tile_at_world_position(
             cursor_world_position.position(),
-            grid.size(),
+            grid.0.read().unwrap().size(),
             falling_sand_settings.tile_size,
         );
 

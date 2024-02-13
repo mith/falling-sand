@@ -22,7 +22,7 @@ mod material;
 mod movement;
 mod pan_zoom_camera;
 mod particle_grid;
-mod react;
+mod reactions;
 mod time_control;
 mod util;
 
