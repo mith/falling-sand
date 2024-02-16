@@ -150,21 +150,14 @@ fn spawn_chunk_under_stroke(
     chunk_positions: Res<ChunkPositions>,
     stroke_query: Query<&Stroke>,
 ) {
-    let mut spawn_if_not_created = |cursor_chunk_position: IVec2| {
-        if !chunk_positions.contains(&cursor_chunk_position) {
-            info!("Creating chunk at {:?}", cursor_chunk_position);
-            chunk_creation_params.create_chunk(cursor_chunk_position, false);
-        }
-    };
     for stroke in stroke_query.iter() {
-        let chunk_positions = stroke
+        let unspawned_stroke_chunk_positions = stroke
             .0
             .iter()
             .map(|pos| tile_pos_to_chunk_pos(pos.x, pos.y))
-            .unique();
-        for chunk_position in chunk_positions {
-            spawn_if_not_created(chunk_position);
-        }
+            .unique()
+            .filter(|pos| !chunk_positions.contains(pos));
+        chunk_creation_params.spawn_chunks(unspawned_stroke_chunk_positions);
     }
 }
 
