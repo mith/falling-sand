@@ -1809,6 +1809,7 @@ dependencies = [
  "nix 0.27.1",
  "paste",
  "rand",
+ "smallvec",
 ]
 
 [[package]]

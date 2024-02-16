@@ -11,7 +11,6 @@ use crate::{draw_tool::ToolState, falling_sand::FallingSandPlugin, material::Mat
 use bevy::prelude::*;
 use time_control::TimeControlPlugin;
 
-mod checker_board_iterator;
 mod chunk;
 mod cursor_world_position;
 mod draw_tool;
@@ -22,7 +21,9 @@ mod material;
 mod movement;
 mod pan_zoom_camera;
 mod particle_grid;
+mod process_chunks;
 mod reactions;
+mod sparse_grid_iterator;
 mod time_control;
 mod util;
 

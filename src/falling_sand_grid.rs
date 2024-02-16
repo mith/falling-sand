@@ -1,5 +1,4 @@
 use std::{
-    mem::MaybeUninit,
     ops::{Deref, DerefMut},
     sync::{Arc, RwLock, RwLockWriteGuard},
 };
@@ -11,6 +10,7 @@ use bevy::{
     ecs::{
         component::Component,
         entity::Entity,
+        query::{Added, With},
         system::{Commands, Query, Res, ResMut, Resource, SystemParam},
     },
     math::IVec2,
@@ -18,7 +18,7 @@ use bevy::{
 };
 
 use crate::{
-    chunk::{Chunk, ChunkData},
+    chunk::{self, Chunk, ChunkData},
     material::Material,
     particle_grid::{Particle, ParticleAttributeStore},
     util::positive_mod,
@@ -54,10 +54,9 @@ impl ChunkPositions {
 
 pub fn update_chunk_positions(
     mut chunk_positions: ResMut<ChunkPositions>,
-    chunks: Query<(Entity, &ChunkPosition)>,
+    new_chunks: Query<(Entity, &ChunkPosition), Added<ChunkPosition>>,
 ) {
-    chunk_positions.0.clear();
-    for (entity, position) in chunks.iter() {
+    for (entity, position) in new_chunks.iter() {
         chunk_positions.0.insert(position.0, entity);
     }
 }
@@ -83,49 +82,23 @@ impl<'w, 's> FallingSandGridQuery<'w, 's> {
         IVec2::new(CHUNK_SIZE, CHUNK_SIZE)
     }
 
-    fn get_chunk(&self, x: i32, y: i32) -> &Chunk {
+    fn get_chunk_data(&self, x: i32, y: i32) -> Arc<RwLock<ChunkData>> {
         let chunk_entity = self.get_chunk_entity_at(x, y).unwrap();
-        self.chunks.get(chunk_entity).unwrap()
-    }
-
-    fn get_chunk_mut(&mut self, x: i32, y: i32) -> Arc<RwLock<ChunkData>> {
-        let chunk_entity = self.get_chunk_entity_at(x, y).unwrap();
-        self.chunks.get_mut(chunk_entity).unwrap().clone()
-    }
-
-    fn get_chunks_mut<const N: usize>(
-        &mut self,
-        chunks: &[IVec2; N],
-    ) -> [Arc<RwLock<ChunkData>>; N] {
-        let mut entities = [(); N].map(|_| MaybeUninit::uninit());
-
-        for (i, pos) in chunks.iter().enumerate() {
-            let chunk_entity = self.get_chunk_entity_at(pos.x, pos.y).unwrap();
-            entities[i] = MaybeUninit::new(chunk_entity);
-        }
-
-        unsafe {
-            self.chunks
-                .get_many_mut(entities.map(|e| e.assume_init()))
-                .ok()
-                .map(|chunks| chunks.map(|chunk| chunk.clone()))
-                .unwrap()
-        }
+        self.chunks.get(chunk_entity).unwrap().clone().0.clone()
     }
 
     pub fn get_particle(&self, x: i32, y: i32) -> Particle {
         let chunk_pos = tile_pos_to_chunk_pos(x, y);
-        let chunk = self.get_chunk(chunk_pos.x, chunk_pos.y);
-        *(chunk
-            .read()
-            .unwrap()
+        let chunk = self.get_chunk_data(chunk_pos.x, chunk_pos.y);
+        let read = chunk.read().unwrap();
+        *(read
             .get_particle(positive_mod(x, CHUNK_SIZE), positive_mod(y, CHUNK_SIZE))
             .unwrap())
     }
 
     pub fn set_particle(&mut self, x: i32, y: i32, material: Material) {
         let chunk_pos = tile_pos_to_chunk_pos(x, y);
-        let chunk = self.get_chunk_mut(chunk_pos.x, chunk_pos.y);
+        let chunk = self.get_chunk_data(chunk_pos.x, chunk_pos.y);
         let mut chunk_data = chunk.write().unwrap();
         chunk_data.set_particle_material(
             positive_mod(x, CHUNK_SIZE),
@@ -150,6 +123,7 @@ impl<'w, 's> FallingSandGridQuery<'w, 's> {
 
 macro_rules! define_attributes_and_swap {
     ($($attr:ident: $type:ty),* $(,)?) => {
+        #[derive(Debug)]
         pub struct ParticleAttributes {
             $(pub $attr: ParticleAttributeStore<$type>,)*
         }
@@ -171,7 +145,7 @@ macro_rules! define_attributes_and_swap {
                 let particle_pos_b = (positive_mod(b.0, CHUNK_SIZE), positive_mod(b.1, CHUNK_SIZE));
 
                 if chunk_a_pos == chunk_b_pos {
-                    let chunk = self.get_chunk_mut(chunk_a_pos.x, chunk_a_pos.y);
+                    let chunk = self.get_chunk_data(chunk_a_pos.x, chunk_a_pos.y);
                     let chunk_lock = chunk.write();
                     let mut chunk = chunk_lock.unwrap();
                     chunk.swap_particles(
@@ -179,7 +153,8 @@ macro_rules! define_attributes_and_swap {
                         particle_pos_b
                     );
                 } else {
-                    let [chunk_a, chunk_b] = self.get_chunks_mut(&[chunk_a_pos, chunk_b_pos]);
+                    let chunk_a = self.get_chunk_data(chunk_a_pos.x, chunk_a_pos.y);
+                    let chunk_b = self.get_chunk_data(chunk_b_pos.x, chunk_b_pos.y);
 
                     let chunk_a_lock = chunk_a.write();
                     let chunk_b_lock = chunk_b.write();
@@ -211,14 +186,15 @@ macro_rules! define_attributes_and_swap {
                 paste! {
                     pub fn [<get_ $attr>](&self, x: i32, y: i32) -> $type {
                         let chunk_pos = tile_pos_to_chunk_pos(x, y);
-                        let chunk = self.get_chunk(chunk_pos.x, chunk_pos.y).read().unwrap();
+                        let chunk_data = self.get_chunk_data(chunk_pos.x, chunk_pos.y);
+                        let chunk = chunk_data.read().unwrap();
                         let particle = *chunk.get_particle(positive_mod(x, CHUNK_SIZE), positive_mod(y, CHUNK_SIZE)).unwrap();
                         *chunk.attributes().$attr.get(particle.id).unwrap()
                     }
 
                     pub fn [<set_ $attr>](&mut self, x: i32, y: i32, value: $type) {
                         let chunk_pos = tile_pos_to_chunk_pos(x, y);
-                        let chunk = self.get_chunk_mut(chunk_pos.x, chunk_pos.y);
+                        let chunk = self.get_chunk_data(chunk_pos.x, chunk_pos.y);
                         let mut chunk_lock = chunk.write().unwrap();
                         let particle = *chunk_lock.get_particle_mut(positive_mod(x, CHUNK_SIZE), positive_mod(y, CHUNK_SIZE)).unwrap();
                         chunk_lock.attributes_mut().$attr.set(particle.id, value);
@@ -292,15 +268,27 @@ pub struct ChunkNeighborhoodView<'a> {
 }
 
 impl ChunkNeighborhoodView<'_> {
-    pub fn new(chunks: &[(IVec2, Arc<RwLock<ChunkData>>); 9]) -> ChunkNeighborhoodView<'_> {
-        let chunk_refs = chunks
+    pub fn new<'a>(
+        center_chunk: &'a (IVec2, Arc<RwLock<ChunkData>>),
+        neighbors: &'a [(IVec2, Arc<RwLock<ChunkData>>)],
+    ) -> ChunkNeighborhoodView<'a> {
+        let mut chunk_refs = neighbors
             .iter()
             .map(|(pos, chunk)| (*pos, chunk.write().unwrap()))
             .collect_vec();
+        chunk_refs.push((center_chunk.0, center_chunk.1.write().unwrap()));
         ChunkNeighborhoodView { chunk_refs }
     }
 
-    fn get_chunk_at_pos(&self, x: i32, y: i32) -> Option<&ChunkData> {
+    pub fn center_chunk_mut(&mut self) -> &mut ChunkData {
+        self.chunk_refs.last_mut().unwrap().1.deref_mut()
+    }
+
+    pub fn chunk_size(&self) -> IVec2 {
+        IVec2::new(CHUNK_SIZE, CHUNK_SIZE)
+    }
+
+    pub fn get_chunk_at_pos(&self, x: i32, y: i32) -> Option<&ChunkData> {
         let chunk_pos = tile_pos_to_chunk_pos(x, y);
         self.chunk_refs
             .iter()
@@ -308,7 +296,7 @@ impl ChunkNeighborhoodView<'_> {
             .map(|(_, chunk)| chunk.deref())
     }
 
-    fn get_chunk_at_pos_mut(&mut self, x: i32, y: i32) -> Option<&mut ChunkData> {
+    pub fn get_chunk_at_pos_mut(&mut self, x: i32, y: i32) -> Option<&mut ChunkData> {
         let chunk_pos = tile_pos_to_chunk_pos(x, y);
         self.chunk_refs
             .iter_mut()
@@ -316,7 +304,7 @@ impl ChunkNeighborhoodView<'_> {
             .map(|(_, chunk)| chunk.deref_mut())
     }
 
-    fn get_two_chunks_mut(
+    pub fn get_two_chunks_mut(
         &mut self,
         pos_a: IVec2,
         pos_b: IVec2,
@@ -325,26 +313,21 @@ impl ChunkNeighborhoodView<'_> {
             return None; // Early return if positions are the same, as we can't borrow mutably twice.
         }
 
-        let (first_index, second_index) =
-            self.chunk_refs
-                .iter()
-                .enumerate()
-                .find_map(|(i, (pos, _))| {
-                    if *pos == pos_a {
-                        self.chunk_refs
-                            .iter()
-                            .enumerate()
-                            .find_map(|(j, (pos_b, _))| {
-                                if *pos_b == pos_a {
-                                    Some(if i < j { (i, j) } else { (j, i) })
-                                } else {
-                                    None
-                                }
-                            })
-                    } else {
-                        None
-                    }
-                })?;
+        let (first_index, second_index) = self
+            .chunk_refs
+            .iter()
+            .enumerate()
+            .filter_map(|(i, (pos, _))| {
+                if *pos == pos_a || *pos == pos_b {
+                    Some(i)
+                } else {
+                    None
+                }
+            })
+            .collect_tuple()?;
+
+        debug_assert!(first_index < second_index);
+        debug_assert_ne!(first_index, second_index);
 
         let (first_half, second_half) = self.chunk_refs.split_at_mut(second_index);
         let chunk_a = &mut first_half[first_index].1;
@@ -380,6 +363,8 @@ impl ChunkNeighborhoodView<'_> {
 
 #[cfg(test)]
 mod test {
+    use rand::{rngs::StdRng, SeedableRng};
+
     use super::*;
 
     #[test]
@@ -389,5 +374,11 @@ mod test {
         assert_eq!(tile_pos_to_chunk_pos(64, 64), IVec2::new(1, 1));
         assert_eq!(tile_pos_to_chunk_pos(65, 65), IVec2::new(1, 1));
         assert_eq!(tile_pos_to_chunk_pos(0, -1), IVec2::new(0, -1));
+    }
+
+    #[test]
+    fn test_chunk_neighorhood_view_get_chunk_at_pos() {
+        let rng = StdRng::seed_from_u64(0);
+        let mut chunk = Chunk::new((CHUNK_SIZE as usize, CHUNK_SIZE as usize), rng);
     }
 }

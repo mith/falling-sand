@@ -3,12 +3,12 @@ use bevy::{math::IVec2, utils::HashSet};
 /// Iterator for iterating over active chunks in a sparse grid pattern.
 /// The chunks in each returned set are guaranteed to be at least 2 chunks apart.
 pub struct SparseGridIterator {
-    active_chunks: HashSet<IVec2>,
+    active_chunks: Vec<IVec2>,
     iteration: i32,
 }
 
 impl SparseGridIterator {
-    pub fn new(active_chunks: HashSet<IVec2>) -> SparseGridIterator {
+    pub fn new(active_chunks: Vec<IVec2>) -> SparseGridIterator {
         // Clone the active chunks from the grid
 
         SparseGridIterator {
@@ -90,7 +90,7 @@ mod test {
             IVec2::new(1, 2),
             IVec2::new(2, 2),
         ]);
-        let mut iter = SparseGridIterator::new(active_chunks);
+        let mut iter = SparseGridIterator::new(active_chunks.into_iter().collect());
 
         assert_eq!(iter.next(), Some(HashSet::from([IVec2::new(0, 0)])));
         assert_eq!(iter.next(), Some(HashSet::from([IVec2::new(1, 0)])));
@@ -115,7 +115,7 @@ mod test {
             IVec2::new(0, 2),
             IVec2::new(1, 2),
         ]);
-        let mut iter = SparseGridIterator::new(active_chunks);
+        let mut iter = SparseGridIterator::new(active_chunks.into_iter().collect());
 
         assert_eq!(iter.next(), Some(HashSet::from([IVec2::new(0, 0)])));
         assert_eq!(iter.next(), Some(HashSet::from([IVec2::new(1, 0)])));
@@ -130,7 +130,7 @@ mod test {
     #[test]
     fn test_extended_checkerboard_iterator_2_chunks_between_returned_chunks() {
         let active_chunks = HashSet::from([IVec2::new(0, 0), IVec2::new(-3, 0), IVec2::new(3, 0)]);
-        let mut iter = SparseGridIterator::new(active_chunks);
+        let mut iter = SparseGridIterator::new(active_chunks.into_iter().collect());
 
         assert_eq!(
             iter.next(),

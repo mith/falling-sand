@@ -176,13 +176,15 @@ impl Reaction {
 }
 
 #[derive(Resource, Deref)]
-pub struct MaterialReactions(HashMap<(Material, Material), Option<Reaction>>);
+pub struct MaterialReactions(HashMap<(Material, Material), Reaction>);
 
 impl MaterialReactions {
     pub fn get(&self, material: Material, adjacent_material: Material) -> Option<&Reaction> {
-        self.0
-            .get(&(material, adjacent_material))
-            .and_then(|r| r.as_ref())
+        self.0.get(&(material, adjacent_material))
+    }
+
+    pub fn has_reactions_for(&self, material: Material) -> bool {
+        self.0.keys().any(|(m1, _m2)| *m1 == material)
     }
 }
 
@@ -191,24 +193,24 @@ impl Default for MaterialReactions {
         MaterialReactions(HashMap::from([
             (
                 (Material::Water, Material::Fire),
-                Some(Reaction {
+                Reaction {
                     probability: 10,
                     product_material: Material::Steam,
-                }),
+                },
             ),
             (
                 (Material::Wood, Material::Fire),
-                Some(Reaction {
+                Reaction {
                     probability: 15,
                     product_material: Material::Fire,
-                }),
+                },
             ),
             (
                 (Material::Oil, Material::Fire),
-                Some(Reaction {
+                Reaction {
                     probability: 40,
                     product_material: Material::Fire,
-                }),
+                },
             ),
         ]))
     }

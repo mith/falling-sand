@@ -5,6 +5,7 @@ use bevy::{
     math::IVec2,
     prelude::{Deref, DerefMut},
 };
+use rand::rngs::StdRng;
 
 use crate::{
     falling_sand_grid::ParticleAttributes,
@@ -16,23 +17,36 @@ use crate::{
 pub struct Chunk(pub Arc<RwLock<ChunkData>>);
 
 impl Chunk {
-    pub fn new(size: (usize, usize)) -> Chunk {
-        Chunk(Arc::new(RwLock::new(ChunkData::new(size))))
+    pub fn new(size: (usize, usize), rng: StdRng) -> Chunk {
+        Chunk(Arc::new(RwLock::new(ChunkData::new(size, rng))))
+    }
+
+    pub fn new_with_material(size: (usize, usize), material: Material, rng: StdRng) -> Chunk {
+        Chunk(Arc::new(RwLock::new(ChunkData::new_with_material(
+            size, material, rng,
+        ))))
     }
 }
 
+#[derive(Debug)]
 pub struct ChunkData {
     pub particles: ParticleGrid,
     attributes: ParticleAttributes,
+    rng: StdRng,
 }
 
 impl ChunkData {
-    pub fn new(size: (usize, usize)) -> ChunkData {
-        let particle_grid = ParticleGrid::new(size);
+    fn new(size: (usize, usize), rng: StdRng) -> ChunkData {
+        ChunkData::new_with_material(size, Material::Air, rng)
+    }
+
+    fn new_with_material(size: (usize, usize), material: Material, rng: StdRng) -> ChunkData {
+        let particle_grid = ParticleGrid::new(size, material);
         let size = particle_grid.array().len();
         ChunkData {
             particles: particle_grid,
             attributes: ParticleAttributes::new(size),
+            rng,
         }
     }
 
@@ -89,5 +103,9 @@ impl ChunkData {
         let particle_id = particle.id;
         // Mark the particle as dirty
         self.attributes.dirty.set(particle_id, true);
+    }
+
+    pub fn rng(&mut self) -> &mut StdRng {
+        &mut self.rng
     }
 }

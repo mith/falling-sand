@@ -1,8 +1,6 @@
-use bevy::{
-    ecs::system::{Res, ResMut},
-    utils::HashMap,
-};
+use bevy::ecs::system::{Res, ResMut};
 use rand::seq::SliceRandom;
+use smallvec::SmallVec;
 
 use crate::{
     falling_sand::FallingSandRng,
@@ -16,6 +14,7 @@ pub fn react(
     material_reactions: Res<MaterialReactions>,
     mut rng: ResMut<FallingSandRng>,
 ) {
+    type ReactionChoices = SmallVec<[(Material, u32); 8]>;
     for chunk_pos in grid.active_chunks() {
         let chunk_size = grid.chunk_size();
         let min_y = chunk_pos.y * chunk_size.y;
@@ -26,35 +25,48 @@ pub fn react(
             for x in random_dir_range(&mut rng.0, min_x, max_x) {
                 let particle = grid.get_particle(x, y);
                 let particle_is_dirty: bool = grid.get_dirty(x, y);
-                if particle_is_dirty {
+                if particle_is_dirty || !material_reactions.has_reactions_for(particle.material) {
                     continue;
                 }
 
-                let probable_reactions: HashMap<Material, u32> = {
-                    let mut nearby_materials = HashMap::default();
-                    for dx in -1..=1 {
-                        for dy in -1..=1 {
-                            if dx == 0 && dy == 0 {
-                                continue;
-                            }
-                            let adjacent_particle = grid.get_particle(x + dx, y + dy);
-                            if grid.get_dirty(x + dx, y + dy) {
-                                continue;
-                            }
-                            if let Some(reaction) = material_reactions
-                                .get(particle.material, adjacent_particle.material)
-                                .as_ref()
-                            {
-                                *nearby_materials
-                                    .entry(reaction.product_material())
-                                    .or_insert(0) += reaction.probability();
+                let mut probable_reactions: ReactionChoices = SmallVec::new();
+
+                for dx in -1..=1 {
+                    for dy in -1..=1 {
+                        if dx == 0 && dy == 0 {
+                            continue;
+                        }
+                        let adjacent_particle = grid.get_particle(x + dx, y + dy);
+                        if grid.get_dirty(x + dx, y + dy) {
+                            continue;
+                        }
+                        if let Some(reaction) =
+                            material_reactions.get(particle.material, adjacent_particle.material)
+                        {
+                            // Add the probability of the reaction to the existing reaction if it exists
+                            // or create a new reaction with the probability of the reaction
+                            let reaction_probability = reaction.probability();
+                            let reaction_material = reaction.product_material();
+
+                            let existing_reaction = probable_reactions
+                                .iter_mut()
+                                .find(|(m, _)| *m == reaction_material);
+                            if let Some((_, prob)) = existing_reaction {
+                                *prob += reaction_probability;
+                            } else {
+                                probable_reactions.push((reaction_material, reaction_probability));
                             }
                         }
                     }
-                    nearby_materials
-                };
+                }
 
-                let total_probability: u32 = probable_reactions.values().sum();
+                let total_probability: u32 = probable_reactions.iter().map(|&(_, prob)| prob).sum();
+                let change_for_no_reaction = 100u32.saturating_sub(total_probability);
+                probable_reactions.push((particle.material, change_for_no_reaction));
+
+                let total_probability: u32 = probable_reactions
+                    .iter()
+                    .fold(0, |acc, &(_, prob)| acc + prob);
 
                 if total_probability == 0 {
                     continue;
@@ -62,16 +74,11 @@ pub fn react(
 
                 let change_for_no_reaction = 100 - total_probability.min(100);
 
-                let r_vec: Vec<(&Material, &u32)> = probable_reactions
-                    .iter()
-                    .chain(std::iter::once((
-                        &particle.material,
-                        &change_for_no_reaction,
-                    )))
-                    .collect();
+                probable_reactions.push((particle.material, change_for_no_reaction));
 
-                let r = r_vec.choose_weighted(&mut rng.0, |(_, probability)| *probability);
-                grid.set_particle(x, y, *r.unwrap().0);
+                let r =
+                    probable_reactions.choose_weighted(&mut rng.0, |(_, probability)| *probability);
+                grid.set_particle(x, y, r.unwrap().0);
             }
         }
     }

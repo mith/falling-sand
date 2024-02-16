@@ -7,9 +7,11 @@ use bevy::{
     },
     input::{keyboard::KeyCode, mouse::MouseButton, Input},
     math::{IVec2, Vec2},
+    reflect::Reflect,
     time::{Time, Timer},
     utils::HashMap,
 };
+use bevy_inspector_egui::quick::ResourceInspectorPlugin;
 use line_drawing::Bresenham;
 
 use crate::{
@@ -24,16 +26,18 @@ pub struct DrawToolPlugin;
 
 impl bevy::app::Plugin for DrawToolPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<CursorTilePosition>().add_systems(
-            Update,
-            (
-                cursor_tile_position_system,
-                switch_tool_system,
-                draw_tool_system,
-            )
-                .chain()
-                .after(FallingSandSet),
-        );
+        app.init_resource::<CursorTilePosition>()
+            .add_plugins(ResourceInspectorPlugin::<CursorTilePosition>::default())
+            .add_systems(
+                Update,
+                (
+                    cursor_tile_position_system,
+                    switch_tool_system,
+                    draw_tool_system,
+                )
+                    .chain()
+                    .after(FallingSandSet),
+            );
     }
 }
 
@@ -84,9 +88,7 @@ fn draw_tool_system(
         return;
     }
 
-    let Some(current_tile_pos) = cursor_tile_position.0 else {
-        return;
-    };
+    let current_tile_pos = cursor_tile_position.0;
 
     if timer.0.tick(time.delta()).just_finished() || cursor_tile_position.is_changed() {
         let mut draw_to_cell = |x: i32, y: i32| {
@@ -105,8 +107,8 @@ fn draw_tool_system(
     }
 }
 
-#[derive(Resource, Default)]
-struct CursorTilePosition(Option<IVec2>);
+#[derive(Resource, Default, Reflect)]
+struct CursorTilePosition(IVec2);
 
 fn cursor_tile_position_system(
     cursor_world_position: Res<CursorWorldPosition>,
@@ -127,18 +129,10 @@ fn cursor_tile_position_system(
     }
 }
 
-fn get_tile_at_world_position(
-    world_position: Vec2,
-    grid_size: IVec2,
-    tile_size: u32,
-) -> Option<IVec2> {
+fn get_tile_at_world_position(world_position: Vec2, grid_size: IVec2, tile_size: u32) -> IVec2 {
     let x = (world_position.x / tile_size as f32 + grid_size.x as f32 / 2.0) as i32;
     let y = (world_position.y / tile_size as f32 + grid_size.y as f32 / 2.0) as i32;
-    if x >= 0 && x < grid_size.x && y >= 0 && y < grid_size.y {
-        Some(IVec2::new(x, y))
-    } else {
-        None
-    }
+    IVec2::new(x, y)
 }
 
 #[cfg(test)]
@@ -152,14 +146,14 @@ mod test {
 
         let cursor_position = Vec2::new(0., 0.);
         let tile_position = get_tile_at_world_position(cursor_position, grid_size, tile_size);
-        assert_eq!(tile_position, Some(IVec2::new(5, 5)));
+        assert_eq!(tile_position, IVec2::new(5, 5));
 
         let cursor_position = Vec2::new(4.5, 4.5);
         let tile_position = get_tile_at_world_position(cursor_position, grid_size, tile_size);
-        assert_eq!(tile_position, Some(IVec2::new(9, 9)));
+        assert_eq!(tile_position, IVec2::new(9, 9));
 
         let cursor_position = Vec2::new(-4.5, 4.5);
         let tile_position = get_tile_at_world_position(cursor_position, grid_size, tile_size);
-        assert_eq!(tile_position, Some(IVec2::new(0, 9)));
+        assert_eq!(tile_position, IVec2::new(0, 9));
     }
 }

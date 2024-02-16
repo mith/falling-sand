@@ -39,14 +39,15 @@ impl ParticleGrid {
 }
 
 impl ParticleGrid {
-    pub fn new(size: (usize, usize)) -> ParticleGrid {
+    pub fn new(size: (usize, usize), material: Material) -> ParticleGrid {
         ParticleGrid(Array2::from_shape_fn(size, |(i, j)| {
             let id = j as u32 * size.0 as u32 + i as u32;
-            Particle::new(Material::Air, id)
+            Particle::new(material, id)
         }))
     }
 }
 
+#[derive(Debug)]
 pub struct ParticleAttributeStore<T> {
     data: Vec<T>,
 }
