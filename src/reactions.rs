@@ -3,26 +3,22 @@ use rand::seq::SliceRandom;
 use smallvec::SmallVec;
 
 use crate::{
-    falling_sand::FallingSandRng,
-    falling_sand_grid::FallingSandGridQuery,
     material::{Material, MaterialReactions},
+    process_chunks::{process_chunks_parallel, ChunksParam},
     util::random_dir_range,
 };
 
-pub fn react(
-    mut grid: FallingSandGridQuery,
-    material_reactions: Res<MaterialReactions>,
-    mut rng: ResMut<FallingSandRng>,
-) {
-    type ReactionChoices = SmallVec<[(Material, u32); 8]>;
-    for chunk_pos in grid.active_chunks() {
+type ReactionChoices = SmallVec<[(Material, u32); 8]>;
+
+pub fn react(mut grid: ChunksParam, material_reactions: Res<MaterialReactions>) {
+    process_chunks_parallel(&mut grid, |chunk_pos, grid| {
         let chunk_size = grid.chunk_size();
         let min_y = chunk_pos.y * chunk_size.y;
         let max_y = (chunk_pos.y + 1) * chunk_size.y;
         for y in min_y..max_y {
             let min_x = chunk_pos.x * chunk_size.x;
             let max_x = (chunk_pos.x + 1) * chunk_size.x;
-            for x in random_dir_range(&mut rng.0, min_x, max_x) {
+            for x in random_dir_range(grid.center_chunk_mut().rng(), min_x, max_x) {
                 let particle = grid.get_particle(x, y);
                 let particle_is_dirty: bool = grid.get_dirty(x, y);
                 if particle_is_dirty || !material_reactions.has_reactions_for(particle.material) {
@@ -76,10 +72,12 @@ pub fn react(
 
                 probable_reactions.push((particle.material, change_for_no_reaction));
 
-                let r =
-                    probable_reactions.choose_weighted(&mut rng.0, |(_, probability)| *probability);
+                let r = probable_reactions
+                    .choose_weighted(grid.center_chunk_mut().rng(), |(_, probability)| {
+                        *probability
+                    });
                 grid.set_particle(x, y, r.unwrap().0);
             }
         }
-    }
+    });
 }

@@ -15,7 +15,7 @@ pub fn fall(
     material_states: Res<MaterialStates>,
     material_densities: Res<MaterialDensities>,
 ) {
-    process_chunks(&mut grid, |chunk_pos, grid| {
+    process_chunks_parallel(&mut grid, |chunk_pos, grid| {
         let chunk_size = grid.chunk_size();
         let min_y = chunk_pos.y * chunk_size.y;
         let max_y = (chunk_pos.y + 1) * chunk_size.y;
@@ -96,7 +96,7 @@ pub fn flow(
     material_densities: Res<MaterialDensities>,
     material_flowing: Res<MaterialFlowing>,
 ) {
-    process_chunks(&mut grid, |chunk_pos, grid| {
+    process_chunks_parallel(&mut grid, |chunk_pos, grid| {
         let chunk_size = grid.chunk_size();
         let min_y = chunk_pos.y * chunk_size.y;
         let max_y = (chunk_pos.y + 1) * chunk_size.y;

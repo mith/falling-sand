@@ -5,12 +5,15 @@ use std::{
 };
 
 use bevy::{
+    ecs::system::SystemParam,
     prelude::*,
     render::{
         render_resource::{BindGroupEntries, CachedPipelineState},
         Render,
     },
-    utils::HashMap,
+    transform::commands,
+    ui::update,
+    utils::{HashMap, HashSet},
 };
 
 use bevy::render::extract_resource::{ExtractResource, ExtractResourcePlugin};
@@ -24,6 +27,7 @@ use bevy::render::render_resource::{
 use bevy::render::renderer::RenderDevice;
 use bevy::render::{render_graph, RenderApp, RenderSet};
 
+use bevy_egui::egui::text;
 use bytemuck::cast_slice;
 use rand::{rngs::StdRng, SeedableRng};
 
@@ -36,7 +40,9 @@ use crate::{
     material::MaterialIterator,
     material::{Material, MaterialColor, MaterialPlugin},
     movement::{fall, flow},
+    process_chunks::ChunksParam,
     reactions::react,
+    util::chunk_neighbors,
 };
 
 #[derive(Default)]
@@ -47,6 +53,9 @@ pub struct FallingSandPlugin {
 #[derive(SystemSet, Default, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct FallingSandSet;
 
+#[derive(SystemSet, Default, Debug, Clone, PartialEq, Eq, Hash)]
+pub struct FallingSandPostSet;
+
 #[derive(Resource)]
 pub struct FallingSandRng(pub StdRng);
 
@@ -55,6 +64,7 @@ impl Plugin for FallingSandPlugin {
         app.add_plugins((
             ExtractResourcePlugin::<FallingSandImages>::default(),
             ExtractResourcePlugin::<FallingSandSettings>::default(),
+            ExtractResourcePlugin::<DirtyChunks>::default(),
             MaterialPlugin,
         ))
         .insert_resource(Time::<Virtual>::from_max_delta(Duration::from_secs_f32(
@@ -63,24 +73,42 @@ impl Plugin for FallingSandPlugin {
         .insert_resource(self.settings.clone())
         .insert_resource(FallingSandRng(StdRng::seed_from_u64(0)))
         .init_resource::<ChunkPositions>()
+        .init_resource::<DirtyChunks>()
         .init_resource::<FallingSandImages>()
-        .add_systems(Startup, setup)
+        .add_systems(
+            Startup,
+            setup.before(FallingSandSet).before(FallingSandPostSet),
+        )
         .add_systems(
             FixedUpdate,
             (
                 (
                     update_chunk_positions,
                     clean_particles,
-                    fall,
+                    // fall,
                     // flow,
                     // clean_particles,
                     // react,
                     // fire_to_smoke,
-                    grid_to_texture,
                 )
+                    .in_set(FallingSandSet)
                     .chain(),
-                draw_debug_gizmoz,
+                // draw_debug_gizmoz,
             ),
+        )
+        .add_systems(
+            FixedUpdate,
+            (
+                apply_deferred,
+                activate_dirty_chunks,
+                apply_deferred,
+                update_dirty_chunks,
+                grid_to_texture,
+                clean_chunks,
+            )
+                .chain()
+                .in_set(FallingSandPostSet)
+                .after(FallingSandSet),
         );
 
         let render_app = app.sub_app_mut(RenderApp);
@@ -105,10 +133,50 @@ impl Plugin for FallingSandPlugin {
     }
 }
 
-pub fn clean_particles(mut chunk_query: Query<&mut Chunk>) {
-    for grid in chunk_query.iter_mut() {
+fn clean_particles(chunk_query: Query<&Chunk>) {
+    chunk_query.par_iter().for_each(|grid| {
         for dirty in grid.write().unwrap().attributes_mut().dirty.iter_mut() {
             *dirty = false;
+        }
+    });
+}
+
+fn clean_chunks(chunk_query: Query<&Chunk>) {
+    chunk_query.par_iter().for_each(|chunk| {
+        chunk.write().unwrap().set_dirty(false);
+    });
+}
+
+fn update_dirty_chunks(
+    mut dirty_chunks: ResMut<DirtyChunks>,
+    chunk_query: Query<(&Chunk, &ChunkPosition)>,
+) {
+    dirty_chunks.0.clear();
+    for (chunk, chunk_position) in chunk_query.iter() {
+        if chunk.read().unwrap().is_dirty() {
+            dirty_chunks.0.insert(chunk_position.0);
+        }
+    }
+}
+
+fn activate_dirty_chunks(
+    mut commands: Commands,
+    dirty_chunks: ResMut<DirtyChunks>,
+    mut chunk_creation_params: ChunkCreationParams,
+    chunk_params: ChunksParam,
+) {
+    for position in dirty_chunks.0.iter() {
+        let chunk = chunk_params
+            .get_chunk_entity_at(position.x, position.y)
+            .unwrap();
+
+        commands.entity(chunk).insert(ChunkActive);
+
+        // If there's no chunks in the neighborhood, create them
+        for neighbor in chunk_neighbors(*position) {
+            if !chunk_params.chunk_exists(neighbor) {
+                chunk_creation_params.create_chunk(neighbor, false);
+            }
         }
     }
 }
@@ -119,13 +187,25 @@ pub struct FallingSandSprite {
     pub color_map: Handle<Image>,
 }
 
-pub fn grid_to_texture(
-    falling_sand: Query<(&FallingSandSprite, &Chunk)>,
+fn grid_to_texture(
+    falling_sand: Query<(Entity, &FallingSandSprite, &Chunk, &ChunkPosition)>,
     mut textures: ResMut<Assets<Image>>,
+    mut initialized_textures: Local<HashSet<Entity>>,
 ) {
-    for (falling_sand, grid) in &falling_sand {
+    for (chunk_entity, falling_sand, chunk, position) in &falling_sand {
+        if !chunk.read().unwrap().is_dirty() || !initialized_textures.contains(&chunk_entity) {
+            if initialized_textures.contains(&chunk_entity) {
+                info!(chunk_position=?position.0, "Creating chunk texture");
+            }
+            continue;
+        }
+        if !initialized_textures.contains(&chunk_entity) {
+            initialized_textures.insert(chunk_entity);
+        }
+        debug!(chunk_position=?position.0, "Updating chunk texture");
         if let Some(materials_texture) = textures.get_mut(&falling_sand.materials_texture) {
-            let particle_grid = &grid.read().unwrap().particles;
+            let chunk_data = &chunk.read().unwrap();
+            let particle_grid = chunk_data.particles();
             let particle_array = particle_grid.array();
             materials_texture.data.copy_from_slice(cast_slice(
                 particle_array
@@ -163,11 +243,14 @@ struct FallingSandImages {
     chunk_images: HashMap<IVec2, ChunkImages>,
 }
 
+#[derive(Resource, Clone, ExtractResource, Default, Reflect)]
+struct DirtyChunks(HashSet<IVec2>);
+
 #[derive(Resource, Default)]
 struct FallingSandImagesBindGroups(HashMap<IVec2, BindGroup>);
 
 #[derive(Resource)]
-pub struct FallingSandPipeline {
+struct FallingSandPipeline {
     texture_bind_group_layout: BindGroupLayout,
     render_pipeline: CachedComputePipelineId,
 }
@@ -305,13 +388,17 @@ impl render_graph::Node for FallingSandNode {
         world: &World,
     ) -> Result<(), render_graph::NodeRunError> {
         let texture_bind_group = &world.resource::<FallingSandImagesBindGroups>().0;
+        let dirty_chunks = world.resource::<DirtyChunks>();
         let pipeline_cache = world.resource::<PipelineCache>();
         let pipeline = world.resource::<FallingSandPipeline>();
 
         match self.state {
             FallingSandState::Loading => {}
             FallingSandState::Render => {
-                for (_position, bind_group) in texture_bind_group.iter() {
+                for (position, bind_group) in texture_bind_group.iter() {
+                    if !dirty_chunks.0.contains(position) {
+                        continue;
+                    }
                     let mut pass = render_context
                         .command_encoder()
                         .begin_compute_pass(&ComputePassDescriptor::default());
@@ -355,38 +442,36 @@ fn draw_debug_gizmoz(
     }
 }
 
-fn setup(
-    mut commands: Commands,
-    mut images: ResMut<Assets<Image>>,
-    mut falling_sand_images: ResMut<FallingSandImages>,
-    falling_sand_settings: Res<FallingSandSettings>,
-    material_colors: Res<MaterialColor>,
-) {
-    // Create and spawn the central active chunk
-    create_chunk(
-        &mut commands,
-        &mut images,
-        &mut falling_sand_images,
-        &falling_sand_settings,
-        &material_colors,
-        (0, 0).into(),
-        true, // Active chunk
-    );
+#[derive(SystemParam)]
+pub struct ChunkCreationParams<'w, 's> {
+    commands: Commands<'w, 's>,
+    images: ResMut<'w, Assets<Image>>,
+    falling_sand_images: ResMut<'w, FallingSandImages>,
+    falling_sand_settings: Res<'w, FallingSandSettings>,
+    material_colors: Res<'w, MaterialColor>,
+}
 
-    // Spawn inactive chunks around the central chunk
-    for x in -1..=1 {
-        for y in -1..=1 {
-            if x == 0 && y == 0 {
-                continue;
-            }
-            create_chunk(
-                &mut commands,
-                &mut images,
-                &mut falling_sand_images,
-                &falling_sand_settings,
-                &material_colors,
+impl<'w, 's> ChunkCreationParams<'w, 's> {
+    pub fn create_chunk(&mut self, position: IVec2, active: bool) {
+        create_chunk(
+            &mut self.commands,
+            &mut self.images,
+            &mut self.falling_sand_images,
+            &self.falling_sand_settings,
+            &self.material_colors,
+            position,
+            active,
+        );
+    }
+}
+
+fn setup(mut chunk_creation_params: ChunkCreationParams) {
+    let radius = 10;
+    for x in -radius..=radius {
+        for y in -radius..=radius {
+            chunk_creation_params.create_chunk(
                 (x, y).into(),
-                false, // Inactive chunk
+                x.abs() <= (radius - 1) && y.abs() <= (radius - 1),
             );
         }
     }
@@ -413,18 +498,7 @@ fn create_chunk(
         .wrapping_mul(31)
         .wrapping_add(y as u64);
     let rng = StdRng::seed_from_u64(seed);
-    let material = match position {
-        IVec2 { x: 0, y: 0 } => Material::Sand,
-        IVec2 { x: 1, y: 0 } => Material::Water,
-        IVec2 { x: -1, y: 0 } => Material::Bedrock,
-        IVec2 { x: 0, y: 1 } => Material::Wood,
-        IVec2 { x: 1, y: 1 } => Material::Fire,
-        IVec2 { x: -1, y: 1 } => Material::Smoke,
-        IVec2 { x: 0, y: -1 } => Material::Oil,
-        IVec2 { x: 1, y: -1 } => Material::Steam,
-        IVec2 { x: -1, y: -1 } => Material::Air,
-        _ => Material::Air,
-    };
+    let material = Material::Air;
     let chunk = Chunk::new_with_material((size.0 as usize, size.1 as usize), material, rng);
 
     let (grid_texture, color_map_image, color_image) =
@@ -490,7 +564,7 @@ fn create_chunk_images(
     grid_image.texture_descriptor.label = Some("chunk_texture");
 
     grid_image.data.copy_from_slice(cast_slice(
-        falling_sand_grid.particles.array().as_slice().unwrap(),
+        falling_sand_grid.particles().array().as_slice().unwrap(),
     ));
 
     let material_colors_vec = MaterialIterator::new()

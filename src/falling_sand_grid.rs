@@ -18,7 +18,7 @@ use bevy::{
 };
 
 use crate::{
-    chunk::{self, Chunk, ChunkData},
+    chunk::{Chunk, ChunkData},
     material::Material,
     particle_grid::{Particle, ParticleAttributeStore},
     util::positive_mod,
@@ -49,6 +49,10 @@ pub struct ChunkPositions(HashMap<IVec2, Entity>);
 impl ChunkPositions {
     pub fn get_chunk_at(&self, x: i32, y: i32) -> Option<Entity> {
         self.0.get(&IVec2::new(x, y)).copied()
+    }
+
+    pub fn contains(&self, pos: &IVec2) -> bool {
+        self.0.contains_key(pos)
     }
 }
 
@@ -313,27 +317,26 @@ impl ChunkNeighborhoodView<'_> {
             return None; // Early return if positions are the same, as we can't borrow mutably twice.
         }
 
-        let (first_index, second_index) = self
-            .chunk_refs
-            .iter()
-            .enumerate()
-            .filter_map(|(i, (pos, _))| {
-                if *pos == pos_a || *pos == pos_b {
-                    Some(i)
-                } else {
-                    None
-                }
-            })
-            .collect_tuple()?;
+        let mut first_index = self.chunk_refs.iter().position(|(pos, _)| *pos == pos_a)?;
 
-        debug_assert!(first_index < second_index);
-        debug_assert_ne!(first_index, second_index);
+        let mut second_index = self.chunk_refs.iter().position(|(pos, _)| *pos == pos_b)?;
+
+        let mut flipped = false;
+
+        if first_index > second_index {
+            std::mem::swap(&mut first_index, &mut second_index);
+            flipped = true;
+        }
 
         let (first_half, second_half) = self.chunk_refs.split_at_mut(second_index);
         let chunk_a = &mut first_half[first_index].1;
         let chunk_b = &mut second_half[0].1;
 
-        Some((chunk_a, chunk_b))
+        if flipped {
+            Some((chunk_b, chunk_a))
+        } else {
+            Some((chunk_a, chunk_b))
+        }
     }
 
     pub fn get_particle(&self, x: i32, y: i32) -> &Particle {

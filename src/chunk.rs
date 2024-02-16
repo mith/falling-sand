@@ -30,9 +30,10 @@ impl Chunk {
 
 #[derive(Debug)]
 pub struct ChunkData {
-    pub particles: ParticleGrid,
+    particles: ParticleGrid,
     attributes: ParticleAttributes,
     rng: StdRng,
+    dirty: bool,
 }
 
 impl ChunkData {
@@ -47,7 +48,12 @@ impl ChunkData {
             particles: particle_grid,
             attributes: ParticleAttributes::new(size),
             rng,
+            dirty: false,
         }
+    }
+
+    pub fn particles(&self) -> &ParticleGrid {
+        &self.particles
     }
 
     pub fn attributes(&self) -> &ParticleAttributes {
@@ -87,6 +93,8 @@ impl ChunkData {
         self.particles
             .array_mut()
             .swap((a.0 as usize, a.1 as usize), (b.0 as usize, b.1 as usize));
+
+        self.dirty = true;
     }
 
     pub fn get_particle(&self, x: i32, y: i32) -> Option<&Particle> {
@@ -94,10 +102,12 @@ impl ChunkData {
     }
 
     pub fn get_particle_mut(&mut self, x: i32, y: i32) -> Option<&mut Particle> {
+        self.dirty = true;
         self.particles.array_mut().get_mut((x as usize, y as usize))
     }
 
     pub fn set_particle_material(&mut self, x: i32, y: i32, material: Material) {
+        self.dirty = true;
         let particle = self.get_particle_mut(x, y).unwrap();
         particle.material = material;
         let particle_id = particle.id;
@@ -107,5 +117,13 @@ impl ChunkData {
 
     pub fn rng(&mut self) -> &mut StdRng {
         &mut self.rng
+    }
+
+    pub fn is_dirty(&self) -> bool {
+        self.dirty
+    }
+
+    pub fn set_dirty(&mut self, dirty: bool) {
+        self.dirty = dirty;
     }
 }

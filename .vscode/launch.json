@@ -31,6 +31,29 @@
         {
             "type": "lldb",
             "request": "launch",
+            "name": "Debug executable 'falling-sand' (release)",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--release",
+                    "--bin=falling-sand",
+                    "--package=falling-sand",
+                    // "--features=bevy/trace_chrome"
+                ],
+                "filter": {
+                    "name": "falling-sand",
+                    "kind": "bin"
+                }
+            },
+            "env":{ 
+                "CARGO_MANIFEST_DIR": "${workspaceFolder}",
+                "MANGOHUD": "1",
+                "WINIT_UNIX_BACKEND": "wayland",
+            }
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
             "name": "Debug unit tests in executable 'falling-sand'",
             "cargo": {
                 "args": [

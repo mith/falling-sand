@@ -14,6 +14,7 @@ use crate::{
         ChunkActive, ChunkNeighborhoodView, ChunkPosition, ChunkPositions, CHUNK_SIZE,
     },
     sparse_grid_iterator::SparseGridIterator,
+    util::{chunk_neighbors, chunk_pos_with_neighbor_positions},
 };
 
 #[derive(SystemParam)]
@@ -40,6 +41,10 @@ impl ChunksParam<'_, '_> {
         let chunk_entity = self.get_chunk_entity_at(x, y).unwrap();
         self.chunks.get(chunk_entity).unwrap()
     }
+
+    pub fn chunk_exists(&self, position: IVec2) -> bool {
+        self.chunk_positions.contains(&position)
+    }
 }
 
 pub fn process_chunks<F>(grid: &mut ChunksParam, operation: F)
@@ -65,20 +70,6 @@ where
         // Call the operation closure with the current chunk position and neighborhood view.
         operation(chunk_pos, &mut grid_view);
     }
-}
-
-fn chunk_pos_with_neighbor_positions(chunk_pos: IVec2) -> [IVec2; 9] {
-    [
-        chunk_pos,
-        IVec2::new(chunk_pos.x - 1, chunk_pos.y - 1),
-        IVec2::new(chunk_pos.x, chunk_pos.y - 1),
-        IVec2::new(chunk_pos.x + 1, chunk_pos.y - 1),
-        IVec2::new(chunk_pos.x - 1, chunk_pos.y),
-        IVec2::new(chunk_pos.x + 1, chunk_pos.y),
-        IVec2::new(chunk_pos.x - 1, chunk_pos.y + 1),
-        IVec2::new(chunk_pos.x, chunk_pos.y + 1),
-        IVec2::new(chunk_pos.x + 1, chunk_pos.y + 1),
-    ]
 }
 
 pub fn process_chunks_parallel<F>(grid: &mut ChunksParam, operation: F)
@@ -112,17 +103,4 @@ where
                 operation(center.0, &mut grid_view);
             });
     });
-}
-
-fn chunk_neighbors(chunk_position: IVec2) -> [IVec2; 8] {
-    [
-        IVec2::new(chunk_position.x - 1, chunk_position.y - 1),
-        IVec2::new(chunk_position.x, chunk_position.y - 1),
-        IVec2::new(chunk_position.x + 1, chunk_position.y - 1),
-        IVec2::new(chunk_position.x - 1, chunk_position.y),
-        IVec2::new(chunk_position.x + 1, chunk_position.y),
-        IVec2::new(chunk_position.x - 1, chunk_position.y + 1),
-        IVec2::new(chunk_position.x, chunk_position.y + 1),
-        IVec2::new(chunk_position.x + 1, chunk_position.y + 1),
-    ]
 }
