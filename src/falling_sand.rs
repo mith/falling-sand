@@ -1,5 +1,6 @@
 use std::{
     borrow::Cow,
+    hash::Hash,
     sync::{Arc, RwLock},
     time::Duration,
 };
@@ -64,7 +65,7 @@ impl Plugin for FallingSandPlugin {
         app.add_plugins((
             ExtractResourcePlugin::<FallingSandImages>::default(),
             ExtractResourcePlugin::<FallingSandSettings>::default(),
-            ExtractResourcePlugin::<DirtyChunks>::default(),
+            ExtractResourcePlugin::<DirtyOrCreatedChunks>::default(),
             MaterialPlugin,
         ))
         .insert_resource(Time::<Virtual>::from_max_delta(Duration::from_secs_f32(
@@ -74,6 +75,7 @@ impl Plugin for FallingSandPlugin {
         .insert_resource(FallingSandRng(StdRng::seed_from_u64(0)))
         .init_resource::<ChunkPositions>()
         .init_resource::<DirtyChunks>()
+        .init_resource::<DirtyOrCreatedChunks>()
         .init_resource::<FallingSandImages>()
         .add_systems(
             Startup,
@@ -149,14 +151,23 @@ fn clean_chunks(chunk_query: Query<&Chunk>) {
 
 fn update_dirty_chunks(
     mut dirty_chunks: ResMut<DirtyChunks>,
+    mut dirty_or_created_chunks: ResMut<DirtyOrCreatedChunks>,
     chunk_query: Query<(&Chunk, &ChunkPosition)>,
+    mut seen_chunks: Local<HashSet<IVec2>>,
 ) {
     dirty_chunks.0.clear();
     for (chunk, chunk_position) in chunk_query.iter() {
         if chunk.read().unwrap().is_dirty() {
             dirty_chunks.0.insert(chunk_position.0);
         }
+
+        if !seen_chunks.contains(&chunk_position.0) {
+            dirty_or_created_chunks.0.insert(chunk_position.0);
+            seen_chunks.insert(chunk_position.0);
+        }
     }
+
+    dirty_or_created_chunks.0.extend(dirty_chunks.0.iter());
 }
 
 fn activate_dirty_chunks(
@@ -193,10 +204,7 @@ fn grid_to_texture(
     mut initialized_textures: Local<HashSet<Entity>>,
 ) {
     for (chunk_entity, falling_sand, chunk, position) in &falling_sand {
-        if !chunk.read().unwrap().is_dirty() || !initialized_textures.contains(&chunk_entity) {
-            if initialized_textures.contains(&chunk_entity) {
-                info!(chunk_position=?position.0, "Creating chunk texture");
-            }
+        if !chunk.read().unwrap().is_dirty() && initialized_textures.contains(&chunk_entity) {
             continue;
         }
         if !initialized_textures.contains(&chunk_entity) {
@@ -243,8 +251,11 @@ struct FallingSandImages {
     chunk_images: HashMap<IVec2, ChunkImages>,
 }
 
-#[derive(Resource, Clone, ExtractResource, Default, Reflect)]
+#[derive(Resource, Clone, Default, Reflect)]
 struct DirtyChunks(HashSet<IVec2>);
+
+#[derive(Resource, Clone, ExtractResource, Default)]
+struct DirtyOrCreatedChunks(HashSet<IVec2>);
 
 #[derive(Resource, Default)]
 struct FallingSandImagesBindGroups(HashMap<IVec2, BindGroup>);
@@ -388,7 +399,7 @@ impl render_graph::Node for FallingSandNode {
         world: &World,
     ) -> Result<(), render_graph::NodeRunError> {
         let texture_bind_group = &world.resource::<FallingSandImagesBindGroups>().0;
-        let dirty_chunks = world.resource::<DirtyChunks>();
+        let dirty_chunks = world.resource::<DirtyOrCreatedChunks>();
         let pipeline_cache = world.resource::<PipelineCache>();
         let pipeline = world.resource::<FallingSandPipeline>();
 
