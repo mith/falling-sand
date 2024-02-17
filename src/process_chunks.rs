@@ -17,6 +17,8 @@ use crate::{
     util::{chunk_neighbors, chunk_pos_with_neighbor_positions},
 };
 
+const PROCESSING_LIMIT: i32 = 10;
+
 #[derive(SystemParam)]
 pub struct ChunksParam<'w, 's> {
     chunks: Query<'w, 's, &'static Chunk>,
@@ -51,7 +53,11 @@ pub fn process_chunks<F>(grid: &mut ChunksParam, operation: F)
 where
     F: Fn(IVec2, &mut ChunkNeighborhoodView),
 {
-    for chunk_pos in grid.active_chunks() {
+    for &chunk_pos in grid
+        .active_chunks()
+        .iter()
+        .filter(|pos| pos.x.abs() < PROCESSING_LIMIT && pos.y.abs() < PROCESSING_LIMIT)
+    {
         let chunk_neighborhood_pos = chunk_pos_with_neighbor_positions(chunk_pos);
         let chunks = chunk_neighborhood_pos.map(|pos| grid.get_chunk(pos.x, pos.y));
 
@@ -76,7 +82,13 @@ pub fn process_chunks_parallel<F>(grid: &mut ChunksParam, operation: F)
 where
     F: Fn(IVec2, &mut ChunkNeighborhoodView) + Sync,
 {
-    let sparse_iterator = SparseGridIterator::new(grid.active_chunks());
+    let sparse_iterator = SparseGridIterator::new(
+        grid.active_chunks()
+            .iter()
+            .filter(|pos| pos.x.abs() < PROCESSING_LIMIT && pos.y.abs() < PROCESSING_LIMIT)
+            .copied()
+            .collect(),
+    );
 
     sparse_iterator.for_each(|chunk_set| {
         let chunks_with_neighbors = chunk_set

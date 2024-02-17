@@ -90,10 +90,10 @@ impl Plugin for FallingSandPlugin {
                 update_chunk_positions,
                 clean_particles,
                 fall,
-                // flow,
-                // clean_particles,
-                // react,
-                // fire_to_smoke,
+                flow,
+                clean_particles,
+                react,
+                fire_to_smoke,
             )
                 .in_set(FallingSandSet)
                 .chain(),),
@@ -103,9 +103,11 @@ impl Plugin for FallingSandPlugin {
             (
                 update_dirty_chunks,
                 apply_deferred,
-                (activate_dirty_chunks, deactivate_clean_chunks),
-                apply_deferred,
-                grid_to_texture,
+                (
+                    activate_dirty_chunks,
+                    deactivate_clean_chunks,
+                    grid_to_texture,
+                ),
                 clean_chunks,
             )
                 .chain()
@@ -191,6 +193,13 @@ fn activate_dirty_chunks(
             .copied();
 
         chunk_creation_params.spawn_chunks(unspawned_neighbors);
+
+        for neighbor in chunk_neighbors
+            .iter()
+            .filter_map(|&pos| chunk_params.get_chunk_entity_at(pos.x, pos.y))
+        {
+            commands.entity(neighbor).insert(ChunkActive);
+        }
     }
 }
 
