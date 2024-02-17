@@ -27,6 +27,19 @@ pub fn chunk_neighbors(chunk_position: IVec2) -> [IVec2; 8] {
     ]
 }
 
+pub fn chunk_neighbors_n(chunk_position: IVec2, n: i32) -> Vec<IVec2> {
+    let mut neighbors = vec![];
+    for x in -n..n + 1 {
+        for y in -n..n + 1 {
+            if x == 0 && y == 0 {
+                continue;
+            }
+            neighbors.push(IVec2::new(chunk_position.x + x, chunk_position.y + y));
+        }
+    }
+    neighbors
+}
+
 pub fn chunk_pos_with_neighbor_positions(chunk_pos: IVec2) -> [IVec2; 9] {
     [
         chunk_pos,

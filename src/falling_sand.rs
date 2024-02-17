@@ -45,7 +45,7 @@ use crate::{
     movement::{fall, flow},
     process_chunks::ChunksParam,
     reactions::react,
-    util::chunk_neighbors,
+    util::{chunk_neighbors, chunk_neighbors_n},
 };
 
 #[derive(Default)]
@@ -186,15 +186,15 @@ fn activate_dirty_chunks(
 
         commands.entity(chunk).insert(ChunkActive);
 
-        let chunk_neighbors = chunk_neighbors(*position);
-        let unspawned_neighbors = chunk_neighbors
+        let chunk_neighbors_2 = chunk_neighbors_n(*position, 2);
+        let unspawned_neighbors = chunk_neighbors_2
             .iter()
             .filter(|&neighbor| !chunk_params.chunk_exists(*neighbor))
             .copied();
 
         chunk_creation_params.spawn_chunks(unspawned_neighbors);
 
-        for neighbor in chunk_neighbors
+        for neighbor in chunk_neighbors(*position)
             .iter()
             .filter_map(|&pos| chunk_params.get_chunk_entity_at(pos.x, pos.y))
         {
@@ -445,7 +445,7 @@ impl render_graph::Node for FallingSandNode {
                     pass.set_pipeline(render_pipeline);
 
                     let size = (self.size.0 as u32, self.size.1 as u32);
-                    let workgroup_size = 10;
+                    let workgroup_size = 8;
                     pass.dispatch_workgroups(size.0 / workgroup_size, size.1 / workgroup_size, 1);
                 }
             }

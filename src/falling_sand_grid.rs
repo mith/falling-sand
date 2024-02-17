@@ -24,7 +24,7 @@ use crate::{
     util::positive_mod,
 };
 
-pub const CHUNK_SIZE: i32 = 100;
+pub const CHUNK_SIZE: i32 = 64;
 
 #[derive(Component)]
 pub struct ChunkActive;
