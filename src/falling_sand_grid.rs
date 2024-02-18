@@ -26,6 +26,8 @@ use crate::{
 
 pub const CHUNK_SIZE: i32 = 64;
 
+pub const CHUNK_LENGTH: usize = (CHUNK_SIZE * CHUNK_SIZE) as usize;
+
 #[derive(Component)]
 pub struct ChunkActive;
 

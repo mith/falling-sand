@@ -47,7 +47,7 @@ pub struct DragState {
 }
 
 pub fn move_camera_mouse(
-    mouse_button_input: Res<Input<MouseButton>>,
+    mouse_button_input: Res<ButtonInput<MouseButton>>,
     windows: Query<&Window>,
     mut query: Query<(&mut Transform, &mut OrthographicProjection, &mut DragState), With<Camera>>,
 ) {

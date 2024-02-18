@@ -15,11 +15,8 @@ opt-level = 3
 [profile.dev]
 opt-level = 1
 
-[target.'cfg(target_arch = "wasm32")'.profile.release]
-opt-level = "z"
-
 [dependencies.bevy]
-version = "0.12"
+version = "0.13"
 default-features = false
 features = [
     "animation",
@@ -47,8 +44,8 @@ features = [
 ndarray = { version = "0.15.6", features = ["rayon"] }
 enum-map = "2.4.1"
 bytemuck = { version = "1.12.3", features = ["derive"] }
-bevy_egui = "0.24.0"
-bevy-inspector-egui = "0.22.0"
+# bevy_egui = "0.24.0"
+# bevy-inspector-egui = "0.22.0"
 nix = { version = "0.27.1", features = ["process"] }
 half = { version = "2.3.1", features = [
     "bytemuck",

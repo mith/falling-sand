@@ -1,7 +1,6 @@
 #[macro_use]
 extern crate enum_map;
 
-use bevy_inspector_egui::quick::WorldInspectorPlugin;
 use cursor_world_position::CursorWorldPositionPlugin;
 use draw_tool::DrawToolPlugin;
 
@@ -32,7 +31,6 @@ fn main() {
 
     app.add_plugins((
         DefaultPlugins.set(ImagePlugin::default_nearest()),
-        WorldInspectorPlugin::default(),
         CursorWorldPositionPlugin,
         PanZoomCameraPlugin,
         FallingSandPlugin::default(),

@@ -7,14 +7,13 @@ use bevy::{
         schedule::{apply_deferred, IntoSystemConfigs},
         system::{Commands, Local, Query, Res, ResMut, Resource},
     },
-    input::{keyboard::KeyCode, mouse::MouseButton, Input},
+    input::{keyboard::KeyCode, mouse::MouseButton, ButtonInput},
     log::info,
     math::{IVec2, Vec2},
     reflect::Reflect,
     time::{Time, Timer},
     utils::HashMap,
 };
-use bevy_inspector_egui::quick::ResourceInspectorPlugin;
 use itertools::Itertools;
 use line_drawing::Bresenham;
 
@@ -32,25 +31,23 @@ pub struct DrawToolPlugin;
 
 impl bevy::app::Plugin for DrawToolPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<CursorTilePosition>()
-            .add_plugins(ResourceInspectorPlugin::<CursorTilePosition>::default())
-            .add_systems(
-                Update,
-                (
-                    cursor_tile_position_system,
-                    update_chunk_positions,
-                    switch_tool_system,
-                    calculate_stroke,
-                    apply_deferred,
-                    spawn_chunk_under_stroke,
-                    apply_deferred,
-                    update_chunk_positions,
-                    draw_particles,
-                )
-                    .chain()
-                    .after(FallingSandSet)
-                    .before(FallingSandPostSet),
-            );
+        app.init_resource::<CursorTilePosition>().add_systems(
+            Update,
+            (
+                cursor_tile_position_system,
+                update_chunk_positions,
+                switch_tool_system,
+                calculate_stroke,
+                apply_deferred,
+                spawn_chunk_under_stroke,
+                apply_deferred,
+                update_chunk_positions,
+                draw_particles,
+            )
+                .chain()
+                .after(FallingSandSet)
+                .before(FallingSandPostSet),
+        );
     }
 }
 
@@ -59,14 +56,17 @@ pub struct ToolState {
     pub draw_type: Material,
 }
 
-fn switch_tool_system(mut tool_state: ResMut<ToolState>, keyboard_input: Res<Input<KeyCode>>) {
+fn switch_tool_system(
+    mut tool_state: ResMut<ToolState>,
+    keyboard_input: Res<ButtonInput<KeyCode>>,
+) {
     let material_keys = HashMap::from_iter([
-        (KeyCode::Key1, Material::Sand),
-        (KeyCode::Key2, Material::Water),
-        (KeyCode::Key3, Material::Fire),
-        (KeyCode::Key4, Material::Wood),
-        (KeyCode::Key5, Material::Bedrock),
-        (KeyCode::Key6, Material::Oil),
+        (KeyCode::Digit1, Material::Sand),
+        (KeyCode::Digit2, Material::Water),
+        (KeyCode::Digit3, Material::Fire),
+        (KeyCode::Digit4, Material::Wood),
+        (KeyCode::Digit5, Material::Bedrock),
+        (KeyCode::Digit6, Material::Oil),
     ]);
     if let Some(material) = keyboard_input
         .get_pressed()
@@ -92,7 +92,7 @@ struct Stroke(Vec<IVec2>);
 
 fn calculate_stroke(
     mut commands: Commands,
-    mouse_button_input: Res<Input<MouseButton>>,
+    mouse_button_input: Res<ButtonInput<MouseButton>>,
     cursor_tile_position: Res<CursorTilePosition>,
     mut timer: Local<DrawTimer>,
     time: Res<Time>,

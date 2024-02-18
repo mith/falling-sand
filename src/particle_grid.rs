@@ -1,5 +1,4 @@
 use bevy::reflect::Reflect;
-
 use bytemuck::NoUninit;
 use ndarray::prelude::*;
 
@@ -14,6 +13,12 @@ pub struct ParticleId(u32);
 pub struct Particle {
     pub material: Material,
     pub id: ParticleId,
+}
+
+impl Into<u64> for Particle {
+    fn into(self) -> u64 {
+        unsafe { std::mem::transmute(self) }
+    }
 }
 
 impl Particle {

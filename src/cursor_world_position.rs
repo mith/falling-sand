@@ -8,7 +8,7 @@ use bevy::{
     transform::components::GlobalTransform,
     window::Window,
 };
-use bevy_inspector_egui::quick::ResourceInspectorPlugin;
+// use bevy_inspector_egui::quick::ResourceInspectorPlugin;
 
 pub struct CursorWorldPositionPlugin;
 
@@ -16,7 +16,7 @@ impl Plugin for CursorWorldPositionPlugin {
     fn build(&self, app: &mut App) {
         app.register_type::<CursorWorldPosition>()
             .insert_resource(CursorWorldPosition(Vec2::ZERO))
-            .add_plugins(ResourceInspectorPlugin::<CursorWorldPosition>::default())
+            // .add_plugins(ResourceInspectorPlugin::<CursorWorldPosition>::default())
             .add_systems(Update, update_cursor_world_position);
     }
 }

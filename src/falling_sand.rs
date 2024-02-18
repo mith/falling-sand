@@ -9,7 +9,9 @@ use bevy::{
     ecs::system::SystemParam,
     prelude::*,
     render::{
-        render_resource::{BindGroupEntries, CachedPipelineState},
+        render_asset::RenderAssetUsages,
+        render_graph::RenderLabel,
+        render_resource::{BindGroupEntries, CachedPipelineState, DynamicStorageBuffer},
         Render,
     },
     transform::commands,
@@ -28,8 +30,6 @@ use bevy::render::render_resource::{
 use bevy::render::renderer::RenderDevice;
 use bevy::render::{render_graph, RenderApp, RenderSet};
 
-use bevy_egui::egui::text;
-use bevy_inspector_egui::quick::ResourceInspectorPlugin;
 use bytemuck::cast_slice;
 use itertools::Itertools;
 use rand::{rngs::StdRng, SeedableRng};
@@ -37,12 +37,14 @@ use rand::{rngs::StdRng, SeedableRng};
 use crate::{
     chunk::{Chunk, ChunkData},
     falling_sand_grid::{
-        update_chunk_positions, ChunkActive, ChunkPosition, ChunkPositions, CHUNK_SIZE,
+        update_chunk_positions, ChunkActive, ChunkPosition, ChunkPositions, CHUNK_LENGTH,
+        CHUNK_SIZE,
     },
     fire::fire_to_smoke,
     material::MaterialIterator,
     material::{Material, MaterialColor, MaterialPlugin},
     movement::{fall, flow},
+    particle_grid::Particle,
     process_chunks::ChunksParam,
     reactions::react,
     util::{chunk_neighbors, chunk_neighbors_n},
@@ -125,10 +127,10 @@ impl Plugin for FallingSandPlugin {
             );
 
         let mut render_graph = render_app.world.resource_mut::<render_graph::RenderGraph>();
-        render_graph.add_node("falling_sand", FallingSandNode::default());
+        render_graph.add_node(FallingSandRenderLabel, FallingSandNode::default());
         render_graph.add_node_edge(
-            "falling_sand",
-            bevy::render::main_graph::node::CAMERA_DRIVER,
+            FallingSandRenderLabel,
+            bevy::render::graph::CameraDriverLabel,
         );
     }
 
@@ -233,7 +235,7 @@ fn grid_to_texture(
         if !initialized_textures.contains(&chunk_entity) {
             initialized_textures.insert(chunk_entity);
         }
-        debug!(chunk_position=?position.0, "Updating chunk texture");
+
         if let Some(materials_texture) = textures.get_mut(&falling_sand.materials_texture) {
             let chunk_data = &chunk.read().unwrap();
             let particle_grid = chunk_data.particles();
@@ -319,44 +321,41 @@ fn prepare_bind_group(
 
 impl FromWorld for FallingSandPipeline {
     fn from_world(world: &mut World) -> Self {
-        let texture_bind_group_layout =
-            world
-                .resource::<RenderDevice>()
-                .create_bind_group_layout(&BindGroupLayoutDescriptor {
-                    label: Some("chunk_material_bind_group_layout"),
-                    entries: &[
-                        BindGroupLayoutEntry {
-                            binding: 0,
-                            visibility: ShaderStages::COMPUTE,
-                            ty: BindingType::StorageTexture {
-                                access: StorageTextureAccess::ReadOnly,
-                                format: TextureFormat::Rg32Uint,
-                                view_dimension: TextureViewDimension::D2,
-                            },
-                            count: None,
-                        },
-                        BindGroupLayoutEntry {
-                            binding: 1,
-                            visibility: ShaderStages::COMPUTE,
-                            ty: BindingType::StorageTexture {
-                                access: StorageTextureAccess::ReadOnly,
-                                format: TextureFormat::Rgba8Unorm,
-                                view_dimension: TextureViewDimension::D1,
-                            },
-                            count: None,
-                        },
-                        BindGroupLayoutEntry {
-                            binding: 2,
-                            visibility: ShaderStages::COMPUTE,
-                            ty: BindingType::StorageTexture {
-                                access: StorageTextureAccess::WriteOnly,
-                                format: TextureFormat::Rgba8Unorm,
-                                view_dimension: TextureViewDimension::D2,
-                            },
-                            count: None,
-                        },
-                    ],
-                });
+        let texture_bind_group_layout = world.resource::<RenderDevice>().create_bind_group_layout(
+            "chunk_material_bind_group_layout",
+            &[
+                BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::StorageTexture {
+                        access: StorageTextureAccess::ReadOnly,
+                        format: TextureFormat::Rg32Uint,
+                        view_dimension: TextureViewDimension::D2,
+                    },
+                    count: None,
+                },
+                BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::StorageTexture {
+                        access: StorageTextureAccess::ReadOnly,
+                        format: TextureFormat::Rgba8Unorm,
+                        view_dimension: TextureViewDimension::D1,
+                    },
+                    count: None,
+                },
+                BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::StorageTexture {
+                        access: StorageTextureAccess::WriteOnly,
+                        format: TextureFormat::Rgba8Unorm,
+                        view_dimension: TextureViewDimension::D2,
+                    },
+                    count: None,
+                },
+            ],
+        );
 
         let shader = world
             .resource::<AssetServer>()
@@ -386,6 +385,9 @@ enum FallingSandState {
     Loading,
     Render,
 }
+
+#[derive(Debug, Hash, PartialEq, Eq, Clone, RenderLabel)]
+pub struct FallingSandRenderLabel;
 
 #[derive(Default)]
 struct FallingSandNode {
@@ -604,6 +606,7 @@ fn create_chunk_images(
         TextureDimension::D2,
         &[0u8; 16],
         TextureFormat::Rg32Uint,
+        RenderAssetUsages::MAIN_WORLD | RenderAssetUsages::RENDER_WORLD,
     );
     grid_image.texture_descriptor.usage =
         TextureUsages::COPY_DST | TextureUsages::STORAGE_BINDING | TextureUsages::TEXTURE_BINDING;
@@ -627,9 +630,10 @@ fn create_chunk_images(
         TextureDimension::D1,
         material_colors_vec,
         TextureFormat::Rgba8Unorm,
+        RenderAssetUsages::RENDER_WORLD,
     );
     color_map_image.texture_descriptor.usage =
-        TextureUsages::COPY_DST | TextureUsages::STORAGE_BINDING | TextureUsages::TEXTURE_BINDING;
+        TextureUsages::STORAGE_BINDING | TextureUsages::TEXTURE_BINDING;
     color_map_image.texture_descriptor.label = Some("color_map_texture");
 
     // Create the render target texture
@@ -642,9 +646,10 @@ fn create_chunk_images(
         TextureDimension::D2,
         &[0, 0, 0, 255],
         TextureFormat::Rgba8Unorm,
+        RenderAssetUsages::RENDER_WORLD,
     );
     render_target.texture_descriptor.usage =
-        TextureUsages::COPY_DST | TextureUsages::STORAGE_BINDING | TextureUsages::TEXTURE_BINDING;
+        TextureUsages::STORAGE_BINDING | TextureUsages::TEXTURE_BINDING;
 
     // Add the textures to the asset server and get the handles
     let grid_texture = images.add(grid_image);
