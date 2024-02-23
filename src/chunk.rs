@@ -71,18 +71,18 @@ impl ChunkData {
         )
     }
 
-    pub fn swap_particles(&mut self, a: (i32, i32), b: (i32, i32)) {
+    pub fn swap_particles(&mut self, a: IVec2, b: IVec2) {
         // Mark the particles as dirty
         let a_id = self
             .particles
             .array()
-            .get((a.0 as usize, a.1 as usize))
+            .get((a.x as usize, a.y as usize))
             .unwrap()
             .id;
         let b_id = self
             .particles
             .array()
-            .get((b.0 as usize, b.1 as usize))
+            .get((b.x as usize, b.y as usize))
             .unwrap()
             .id;
 
@@ -92,23 +92,23 @@ impl ChunkData {
         // Swap the particles
         self.particles
             .array_mut()
-            .swap((a.0 as usize, a.1 as usize), (b.0 as usize, b.1 as usize));
+            .swap((a.x as usize, a.y as usize), (b.x as usize, b.y as usize));
 
         self.dirty = true;
     }
 
-    pub fn get_particle(&self, x: i32, y: i32) -> Option<&Particle> {
+    pub fn get_particle(&self, IVec2 { x, y }: IVec2) -> Option<&Particle> {
         self.particles.array().get((x as usize, y as usize))
     }
 
-    pub fn get_particle_mut(&mut self, x: i32, y: i32) -> Option<&mut Particle> {
+    pub fn get_particle_mut(&mut self, IVec2 { x, y }: IVec2) -> Option<&mut Particle> {
         self.dirty = true;
         self.particles.array_mut().get_mut((x as usize, y as usize))
     }
 
-    pub fn set_particle_material(&mut self, x: i32, y: i32, material: Material) {
+    pub fn set_particle_material(&mut self, position: IVec2, material: Material) {
         self.dirty = true;
-        let particle = self.get_particle_mut(x, y).unwrap();
+        let particle = self.get_particle_mut(position).unwrap();
         particle.material = material;
         let particle_id = particle.id;
         // Mark the particle as dirty

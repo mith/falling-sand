@@ -49,10 +49,13 @@ pub struct DragState {
 pub fn move_camera_mouse(
     mouse_button_input: Res<ButtonInput<MouseButton>>,
     windows: Query<&Window>,
-    mut query: Query<(&mut Transform, &mut OrthographicProjection, &mut DragState), With<Camera>>,
+    mut camera_query: Query<
+        (&mut Transform, &mut OrthographicProjection, &mut DragState),
+        With<Camera>,
+    >,
 ) {
     if let Ok(window) = windows.get_single() {
-        for (mut transform, ortho, mut state) in query.iter_mut() {
+        for (mut transform, ortho, mut state) in camera_query.iter_mut() {
             if mouse_button_input.just_pressed(MouseButton::Middle) {
                 if let Some(cursor_pos) = window.cursor_position() {
                     state.drag_start = Some((cursor_pos, transform.translation));

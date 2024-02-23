@@ -13,7 +13,7 @@ use bevy::{
         query::{Added, With},
         system::{Commands, Query, Res, ResMut, Resource, SystemParam},
     },
-    math::IVec2,
+    math::{IVec2, Vec2},
     utils::{hashbrown::HashMap, HashSet},
 };
 
@@ -34,7 +34,7 @@ pub struct ChunkActive;
 #[derive(Component)]
 pub struct ChunkPosition(pub IVec2);
 
-pub fn tile_pos_to_chunk_pos(x: i32, y: i32) -> IVec2 {
+pub fn tile_pos_to_chunk_pos(IVec2 { x, y }: IVec2) -> IVec2 {
     let floor_div = |a: i32, b: i32| {
         if a < 0 && a % b != 0 {
             (a / b) - 1
@@ -49,8 +49,8 @@ pub fn tile_pos_to_chunk_pos(x: i32, y: i32) -> IVec2 {
 pub struct ChunkPositions(HashMap<IVec2, Entity>);
 
 impl ChunkPositions {
-    pub fn get_chunk_at(&self, x: i32, y: i32) -> Option<Entity> {
-        self.0.get(&IVec2::new(x, y)).copied()
+    pub fn get_chunk_at(&self, position: IVec2) -> Option<Entity> {
+        self.0.get(&position).copied()
     }
 
     pub fn contains(&self, pos: &IVec2) -> bool {
@@ -62,15 +62,15 @@ pub fn update_chunk_positions(
     mut chunk_positions: ResMut<ChunkPositions>,
     new_chunks: Query<(Entity, &ChunkPosition), Added<ChunkPosition>>,
 ) {
-    for (entity, position) in new_chunks.iter() {
+    new_chunks.iter().for_each(|(entity, position)| {
         chunk_positions.0.insert(position.0, entity);
-    }
+    });
 }
 
 #[derive(SystemParam)]
 pub struct FallingSandGridQuery<'w, 's> {
     commands: Commands<'w, 's>,
-    chunks: Query<'w, 's, &'static mut Chunk>,
+    chunks: Query<'w, 's, &'static Chunk>,
     active_chunks: Query<'w, 's, (&'static ChunkActive, &'static ChunkPosition)>,
     chunk_positions: Res<'w, ChunkPositions>,
 }
@@ -80,45 +80,50 @@ impl<'w, 's> FallingSandGridQuery<'w, 's> {
         self.active_chunks.iter().map(|(_, pos)| pos.0).collect()
     }
 
-    pub fn get_chunk_entity_at(&self, x: i32, y: i32) -> Option<Entity> {
-        self.chunk_positions.get_chunk_at(x, y)
+    pub fn get_chunk_entity_at(&self, position: IVec2) -> Option<Entity> {
+        self.chunk_positions.get_chunk_at(position)
     }
 
     pub fn chunk_size(&self) -> IVec2 {
         IVec2::new(CHUNK_SIZE, CHUNK_SIZE)
     }
 
-    fn get_chunk_data(&self, x: i32, y: i32) -> Arc<RwLock<ChunkData>> {
-        let chunk_entity = self.get_chunk_entity_at(x, y).unwrap();
+    fn get_chunk_data(&self, position: IVec2) -> Arc<RwLock<ChunkData>> {
+        let chunk_entity = self.get_chunk_entity_at(position).unwrap();
         self.chunks.get(chunk_entity).unwrap().clone().0.clone()
     }
 
-    pub fn get_particle(&self, x: i32, y: i32) -> Particle {
-        let chunk_pos = tile_pos_to_chunk_pos(x, y);
-        let chunk = self.get_chunk_data(chunk_pos.x, chunk_pos.y);
+    pub fn get_particle(&self, position: IVec2) -> Particle {
+        let chunk_position = tile_pos_to_chunk_pos(position);
+        let chunk = self.get_chunk_data(chunk_position);
         let read = chunk.read().unwrap();
         *(read
-            .get_particle(positive_mod(x, CHUNK_SIZE), positive_mod(y, CHUNK_SIZE))
+            .get_particle(IVec2::new(
+                positive_mod(position.x, CHUNK_SIZE),
+                positive_mod(position.y, CHUNK_SIZE),
+            ))
             .unwrap())
     }
 
-    pub fn set_particle(&mut self, x: i32, y: i32, material: Material) {
-        let chunk_pos = tile_pos_to_chunk_pos(x, y);
-        let chunk = self.get_chunk_data(chunk_pos.x, chunk_pos.y);
+    pub fn set_particle(&mut self, position: IVec2, material: Material) {
+        let chunk_position = tile_pos_to_chunk_pos(position);
+        let chunk = self.get_chunk_data(chunk_position);
         let mut chunk_data = chunk.write().unwrap();
         chunk_data.set_particle_material(
-            positive_mod(x, CHUNK_SIZE),
-            positive_mod(y, CHUNK_SIZE),
+            IVec2::new(
+                positive_mod(position.x, CHUNK_SIZE),
+                positive_mod(position.y, CHUNK_SIZE),
+            ),
             material,
         );
     }
 
-    pub fn get_chunk_active(&mut self, x: i32, y: i32) -> bool {
-        self.active_chunks().contains(&IVec2::new(x, y))
+    pub fn get_chunk_active(&mut self, chunk_position: IVec2) -> bool {
+        self.active_chunks().contains(&chunk_position)
     }
 
-    pub fn set_chunk_active(&mut self, x: i32, y: i32, active: bool) {
-        let chunk_entity = self.get_chunk_entity_at(x, y).unwrap();
+    pub fn set_chunk_active(&mut self, chunk_position: IVec2, active: bool) {
+        let chunk_entity = self.get_chunk_entity_at(chunk_position).unwrap();
         if active {
             self.commands.entity(chunk_entity).insert(ChunkActive);
         } else {
@@ -143,15 +148,15 @@ macro_rules! define_attributes_and_swap {
         }
 
         impl<'w, 's> FallingSandGridQuery<'w, 's> {
-            pub fn swap_particles(&mut self, a: (i32, i32), b: (i32, i32)) {
-                let chunk_a_pos = tile_pos_to_chunk_pos(a.0, a.1);
-                let chunk_b_pos = tile_pos_to_chunk_pos(b.0, b.1);
+            pub fn swap_particles(&mut self, a: IVec2, b: IVec2) {
+                let chunk_a_pos = tile_pos_to_chunk_pos(a);
+                let chunk_b_pos = tile_pos_to_chunk_pos(b);
 
-                let particle_pos_a = (positive_mod(a.0, CHUNK_SIZE), positive_mod(a.1, CHUNK_SIZE));
-                let particle_pos_b = (positive_mod(b.0, CHUNK_SIZE), positive_mod(b.1, CHUNK_SIZE));
+                let particle_pos_a = (positive_mod(a.x, CHUNK_SIZE), positive_mod(a.y, CHUNK_SIZE)).into();
+                let particle_pos_b = (positive_mod(b.x, CHUNK_SIZE), positive_mod(b.y, CHUNK_SIZE)).into();
 
                 if chunk_a_pos == chunk_b_pos {
-                    let chunk = self.get_chunk_data(chunk_a_pos.x, chunk_a_pos.y);
+                    let chunk = self.get_chunk_data(chunk_a_pos);
                     let chunk_lock = chunk.write();
                     let mut chunk = chunk_lock.unwrap();
                     chunk.swap_particles(
@@ -159,8 +164,8 @@ macro_rules! define_attributes_and_swap {
                         particle_pos_b
                     );
                 } else {
-                    let chunk_a = self.get_chunk_data(chunk_a_pos.x, chunk_a_pos.y);
-                    let chunk_b = self.get_chunk_data(chunk_b_pos.x, chunk_b_pos.y);
+                    let chunk_a = self.get_chunk_data(chunk_a_pos);
+                    let chunk_b = self.get_chunk_data(chunk_b_pos);
 
                     let chunk_a_lock = chunk_a.write();
                     let chunk_b_lock = chunk_b.write();
@@ -168,12 +173,12 @@ macro_rules! define_attributes_and_swap {
                     let mut chunk_a = chunk_a_lock.unwrap();
                     let mut chunk_b = chunk_b_lock.unwrap();
 
-                    let particle_a_id = chunk_a.get_particle(particle_pos_a.0, particle_pos_a.1).unwrap().id;
-                    let particle_b_id = chunk_b.get_particle(particle_pos_b.0, particle_pos_b.1).unwrap().id;
+                    let particle_a_id = chunk_a.get_particle(particle_pos_a).unwrap().id;
+                    let particle_b_id = chunk_b.get_particle(particle_pos_b).unwrap().id;
 
                     std::mem::swap(
-                        &mut chunk_a.get_particle_mut(particle_pos_a.0, particle_pos_a.1).unwrap().material,
-                        &mut chunk_b.get_particle_mut(particle_pos_b.0, particle_pos_b.1).unwrap().material
+                        &mut chunk_a.get_particle_mut(particle_pos_a).unwrap().material,
+                        &mut chunk_b.get_particle_mut(particle_pos_b).unwrap().material
                     );
 
                     $(
@@ -190,19 +195,29 @@ macro_rules! define_attributes_and_swap {
 
             $(
                 paste! {
-                    pub fn [<get_ $attr>](&self, x: i32, y: i32) -> $type {
-                        let chunk_pos = tile_pos_to_chunk_pos(x, y);
-                        let chunk_data = self.get_chunk_data(chunk_pos.x, chunk_pos.y);
+                    pub fn [<get_ $attr>](&self, position: IVec2) -> $type {
+                        let chunk_pos = tile_pos_to_chunk_pos(position);
+                        let chunk_data = self.get_chunk_data(chunk_pos);
                         let chunk = chunk_data.read().unwrap();
-                        let particle = *chunk.get_particle(positive_mod(x, CHUNK_SIZE), positive_mod(y, CHUNK_SIZE)).unwrap();
+                        let particle = *chunk.get_particle(
+                                (
+                                    positive_mod(position.x, CHUNK_SIZE),
+                                    positive_mod(position.y, CHUNK_SIZE)
+                                ).into()
+                            ).unwrap();
                         *chunk.attributes().$attr.get(particle.id).unwrap()
                     }
 
-                    pub fn [<set_ $attr>](&mut self, x: i32, y: i32, value: $type) {
-                        let chunk_pos = tile_pos_to_chunk_pos(x, y);
-                        let chunk = self.get_chunk_data(chunk_pos.x, chunk_pos.y);
+                    pub fn [<set_ $attr>](&mut self, position: IVec2, value: $type) {
+                        let chunk_pos = tile_pos_to_chunk_pos(position);
+                        let chunk = self.get_chunk_data(chunk_pos);
                         let mut chunk_lock = chunk.write().unwrap();
-                        let particle = *chunk_lock.get_particle_mut(positive_mod(x, CHUNK_SIZE), positive_mod(y, CHUNK_SIZE)).unwrap();
+                        let particle = *chunk_lock.get_particle_mut(
+                                (
+                                    positive_mod(position.x, CHUNK_SIZE),
+                                    positive_mod(position.y, CHUNK_SIZE)
+                                ).into()
+                            ).unwrap();
                         chunk_lock.attributes_mut().$attr.set(particle.id, value);
                     }
                 }
@@ -210,28 +225,28 @@ macro_rules! define_attributes_and_swap {
         }
 
         impl<'w> ChunkNeighborhoodView<'w> {
-            pub fn swap_particles(&mut self, a: (i32, i32), b: (i32, i32)) {
-                let chunk_a_pos = tile_pos_to_chunk_pos(a.0, a.1);
-                let chunk_b_pos = tile_pos_to_chunk_pos(b.0, b.1);
+            pub fn swap_particles(&mut self, a: IVec2, b: IVec2) {
+                let chunk_a_pos = tile_pos_to_chunk_pos(a);
+                let chunk_b_pos = tile_pos_to_chunk_pos(b);
 
-                let particle_pos_a = (positive_mod(a.0, CHUNK_SIZE), positive_mod(a.1, CHUNK_SIZE));
-                let particle_pos_b = (positive_mod(b.0, CHUNK_SIZE), positive_mod(b.1, CHUNK_SIZE));
+                let particle_pos_a = IVec2::new(positive_mod(a.x, CHUNK_SIZE), positive_mod(a.y, CHUNK_SIZE));
+                let particle_pos_b = IVec2::new(positive_mod(b.x, CHUNK_SIZE), positive_mod(b.y, CHUNK_SIZE));
 
                 if chunk_a_pos == chunk_b_pos {
-                    let chunk = self.get_chunk_at_pos_mut(a.0, a.1).unwrap();
+                    let chunk = self.get_chunk_at_pos_mut(a).unwrap();
                     chunk.swap_particles(
-                        particle_pos_a,
-                        particle_pos_b
+                        particle_pos_a.into(),
+                        particle_pos_b.into()
                     );
                 } else {
                     let (chunk_a, chunk_b) = self.get_two_chunks_mut(chunk_a_pos, chunk_b_pos).unwrap();
 
-                    let particle_a_id = chunk_a.get_particle(particle_pos_a.0, particle_pos_a.1).unwrap().id;
-                    let particle_b_id = chunk_b.get_particle(particle_pos_b.0, particle_pos_b.1).unwrap().id;
+                    let particle_a_id = chunk_a.get_particle(particle_pos_a).unwrap().id;
+                    let particle_b_id = chunk_b.get_particle(particle_pos_b).unwrap().id;
 
                     std::mem::swap(
-                        &mut chunk_a.get_particle_mut(particle_pos_a.0, particle_pos_a.1).unwrap().material,
-                        &mut chunk_b.get_particle_mut(particle_pos_b.0, particle_pos_b.1).unwrap().material
+                        &mut chunk_a.get_particle_mut(particle_pos_a).unwrap().material,
+                        &mut chunk_b.get_particle_mut(particle_pos_b).unwrap().material
                     );
 
                     $(
@@ -248,15 +263,25 @@ macro_rules! define_attributes_and_swap {
 
             $(
                 paste! {
-                    pub fn [<get_ $attr>](&self, x: i32, y: i32) -> $type {
-                        let chunk = self.get_chunk_at_pos(x, y).unwrap();
-                        let particle = chunk.get_particle(positive_mod(x, CHUNK_SIZE), positive_mod(y, CHUNK_SIZE)).unwrap();
+                    pub fn [<get_ $attr>](&self, position: IVec2) -> $type {
+                        let chunk = self.get_chunk_at_pos(position).unwrap();
+                        let particle = chunk.get_particle(
+                                (
+                                    positive_mod(position.x, CHUNK_SIZE),
+                                    positive_mod(position.y, CHUNK_SIZE)
+                                ).into()
+                            ).unwrap();
                         *chunk.attributes().$attr.get(particle.id).unwrap()
                     }
 
-                    pub fn [<set_ $attr>](&mut self, x: i32, y: i32, value: $type) {
-                        let mut chunk = self.get_chunk_at_pos_mut(x, y).unwrap();
-                        let particle = *chunk.get_particle_mut(positive_mod(x, CHUNK_SIZE), positive_mod(y, CHUNK_SIZE)).unwrap();
+                    pub fn [<set_ $attr>](&mut self, position: IVec2, value: $type) {
+                        let mut chunk = self.get_chunk_at_pos_mut(position).unwrap();
+                        let particle = *chunk.get_particle_mut(
+                                (
+                                    positive_mod(position.x, CHUNK_SIZE),
+                                    positive_mod(position.y, CHUNK_SIZE)
+                                ).into()
+                            ).unwrap();
                         chunk.attributes_mut().$attr.set(particle.id, value);
                     }
                 }
@@ -267,6 +292,7 @@ macro_rules! define_attributes_and_swap {
 
 define_attributes_and_swap! {
     dirty: bool,
+    velocity: IVec2,
 }
 
 pub struct ChunkNeighborhoodView<'a> {
@@ -294,16 +320,16 @@ impl ChunkNeighborhoodView<'_> {
         IVec2::new(CHUNK_SIZE, CHUNK_SIZE)
     }
 
-    pub fn get_chunk_at_pos(&self, x: i32, y: i32) -> Option<&ChunkData> {
-        let chunk_pos = tile_pos_to_chunk_pos(x, y);
+    pub fn get_chunk_at_pos(&self, position: IVec2) -> Option<&ChunkData> {
+        let chunk_pos = tile_pos_to_chunk_pos(position);
         self.chunk_refs
             .iter()
             .find(|(pos, _)| *pos == chunk_pos)
             .map(|(_, chunk)| chunk.deref())
     }
 
-    pub fn get_chunk_at_pos_mut(&mut self, x: i32, y: i32) -> Option<&mut ChunkData> {
-        let chunk_pos = tile_pos_to_chunk_pos(x, y);
+    pub fn get_chunk_at_pos_mut(&mut self, position: IVec2) -> Option<&mut ChunkData> {
+        let chunk_pos = tile_pos_to_chunk_pos(position);
         self.chunk_refs
             .iter_mut()
             .find(|(pos, _)| *pos == chunk_pos)
@@ -341,26 +367,40 @@ impl ChunkNeighborhoodView<'_> {
         }
     }
 
-    pub fn get_particle(&self, x: i32, y: i32) -> &Particle {
-        let chunk = self.get_chunk_at_pos(x, y).unwrap();
+    pub fn get_particle(&self, position: IVec2) -> &Particle {
+        let chunk = self.get_chunk_at_pos(position).unwrap();
         chunk
-            .get_particle(positive_mod(x, CHUNK_SIZE), positive_mod(y, CHUNK_SIZE))
+            .get_particle(
+                (
+                    positive_mod(position.x, CHUNK_SIZE),
+                    positive_mod(position.y, CHUNK_SIZE),
+                )
+                    .into(),
+            )
             .unwrap()
     }
 
-    pub fn get_particle_mut(&mut self, x: i32, y: i32) -> &mut Particle {
-        let mut chunk = self.get_chunk_at_pos_mut(x, y).unwrap();
+    pub fn get_particle_mut(&mut self, position: IVec2) -> &mut Particle {
+        let mut chunk = self.get_chunk_at_pos_mut(position).unwrap();
         chunk
-            .get_particle_mut(positive_mod(x, CHUNK_SIZE), positive_mod(y, CHUNK_SIZE))
+            .get_particle_mut(
+                (
+                    positive_mod(position.x, CHUNK_SIZE),
+                    positive_mod(position.y, CHUNK_SIZE),
+                )
+                    .into(),
+            )
             .unwrap()
     }
 
-    pub fn set_particle(&mut self, x: i32, y: i32, material: Material) {
-        let chunk_pos = tile_pos_to_chunk_pos(x, y);
-        let chunk = &mut self.get_chunk_at_pos_mut(x, y).unwrap();
+    pub fn set_particle(&mut self, position: IVec2, material: Material) {
+        let chunk = &mut self.get_chunk_at_pos_mut(position).unwrap();
         chunk.set_particle_material(
-            positive_mod(x, CHUNK_SIZE),
-            positive_mod(y, CHUNK_SIZE),
+            (
+                positive_mod(position.x, CHUNK_SIZE),
+                positive_mod(position.y, CHUNK_SIZE),
+            )
+                .into(),
             material,
         );
     }
@@ -374,11 +414,11 @@ mod test {
 
     #[test]
     fn test_tile_pos_to_chunk_pos() {
-        assert_eq!(tile_pos_to_chunk_pos(0, 0), IVec2::new(0, 0));
-        assert_eq!(tile_pos_to_chunk_pos(63, 63), IVec2::new(0, 0));
-        assert_eq!(tile_pos_to_chunk_pos(64, 64), IVec2::new(1, 1));
-        assert_eq!(tile_pos_to_chunk_pos(65, 65), IVec2::new(1, 1));
-        assert_eq!(tile_pos_to_chunk_pos(0, -1), IVec2::new(0, -1));
+        assert_eq!(tile_pos_to_chunk_pos((0, 0).into()), IVec2::new(0, 0));
+        assert_eq!(tile_pos_to_chunk_pos((63, 63).into()), IVec2::new(0, 0));
+        assert_eq!(tile_pos_to_chunk_pos((64, 64).into()), IVec2::new(1, 1));
+        assert_eq!(tile_pos_to_chunk_pos((65, 65).into()), IVec2::new(1, 1));
+        assert_eq!(tile_pos_to_chunk_pos((0, -1).into()), IVec2::new(0, -1));
     }
 
     #[test]

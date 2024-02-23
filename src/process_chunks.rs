@@ -31,16 +31,16 @@ impl ChunksParam<'_, '_> {
         self.active_chunks.iter().map(|(_, pos)| pos.0).collect()
     }
 
-    pub fn get_chunk_entity_at(&self, x: i32, y: i32) -> Option<Entity> {
-        self.chunk_positions.get_chunk_at(x, y)
+    pub fn get_chunk_entity_at(&self, chunk_position: IVec2) -> Option<Entity> {
+        self.chunk_positions.get_chunk_at(chunk_position)
     }
 
     pub fn chunk_size(&self) -> IVec2 {
         IVec2::new(CHUNK_SIZE, CHUNK_SIZE)
     }
 
-    pub fn get_chunk(&self, x: i32, y: i32) -> &Chunk {
-        let chunk_entity = self.get_chunk_entity_at(x, y).unwrap();
+    pub fn get_chunk_at(&self, chunk_position: IVec2) -> &Chunk {
+        let chunk_entity = self.get_chunk_entity_at(chunk_position).unwrap();
         self.chunks.get(chunk_entity).unwrap()
     }
 
@@ -59,7 +59,7 @@ where
         .filter(|pos| pos.x.abs() < PROCESSING_LIMIT && pos.y.abs() < PROCESSING_LIMIT)
     {
         let chunk_neighborhood_pos = chunk_pos_with_neighbor_positions(chunk_pos);
-        let chunks = chunk_neighborhood_pos.map(|pos| grid.get_chunk(pos.x, pos.y));
+        let chunks = chunk_neighborhood_pos.map(|pos| grid.get_chunk_at(pos));
 
         let chunks_pos = chunk_neighborhood_pos
             .iter()
@@ -96,13 +96,10 @@ where
             .map(|center_pos| {
                 let neighbors = chunk_neighbors(*center_pos)
                     .iter()
-                    .map(|pos| (*pos, grid.get_chunk(pos.x, pos.y).0.clone()))
+                    .map(|pos| (*pos, grid.get_chunk_at(*pos).0.clone()))
                     .collect::<Vec<_>>();
                 (
-                    (
-                        *center_pos,
-                        grid.get_chunk(center_pos.x, center_pos.y).0.clone(),
-                    ),
+                    (*center_pos, grid.get_chunk_at(*center_pos).0.clone()),
                     neighbors,
                 )
             })

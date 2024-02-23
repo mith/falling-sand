@@ -19,8 +19,9 @@ pub fn react(mut grid: ChunksParam, material_reactions: Res<MaterialReactions>) 
             let min_x = chunk_pos.x * chunk_size.x;
             let max_x = (chunk_pos.x + 1) * chunk_size.x;
             for x in random_dir_range(grid.center_chunk_mut().rng(), min_x, max_x) {
-                let particle = grid.get_particle(x, y);
-                let particle_is_dirty: bool = grid.get_dirty(x, y);
+                let particle_position = (x, y).into();
+                let particle = grid.get_particle(particle_position);
+                let particle_is_dirty: bool = grid.get_dirty(particle_position);
                 if particle_is_dirty || !material_reactions.has_reactions_for(particle.material) {
                     continue;
                 }
@@ -32,8 +33,9 @@ pub fn react(mut grid: ChunksParam, material_reactions: Res<MaterialReactions>) 
                         if dx == 0 && dy == 0 {
                             continue;
                         }
-                        let adjacent_particle = grid.get_particle(x + dx, y + dy);
-                        if grid.get_dirty(x + dx, y + dy) {
+                        let adjecant_particle_position = (x + dx, y + dy).into();
+                        let adjacent_particle = grid.get_particle(adjecant_particle_position);
+                        if grid.get_dirty(adjecant_particle_position) {
                             continue;
                         }
                         if let Some(reaction) =
@@ -76,7 +78,7 @@ pub fn react(mut grid: ChunksParam, material_reactions: Res<MaterialReactions>) 
                     .choose_weighted(grid.center_chunk_mut().rng(), |(_, probability)| {
                         *probability
                     });
-                grid.set_particle(x, y, r.unwrap().0);
+                grid.set_particle(particle_position, r.unwrap().0);
             }
         }
     });

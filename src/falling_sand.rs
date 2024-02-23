@@ -11,8 +11,11 @@ use bevy::{
     render::{
         render_asset::RenderAssetUsages,
         render_graph::RenderLabel,
-        render_resource::{BindGroupEntries, CachedPipelineState, DynamicStorageBuffer},
-        Render,
+        render_resource::{
+            binding_types::texture_storage_2d, AsBindGroup, BindGroupEntries,
+            BindGroupLayoutEntries, CachedPipelineState, DynamicStorageBuffer,
+        },
+        texture, Render,
     },
     transform::commands,
     ui::update,
@@ -92,6 +95,7 @@ impl Plugin for FallingSandPlugin {
                 update_chunk_positions,
                 clean_particles,
                 fall,
+                clean_particles,
                 flow,
                 clean_particles,
                 react,
@@ -142,9 +146,14 @@ impl Plugin for FallingSandPlugin {
 
 fn clean_particles(chunk_query: Query<&Chunk>) {
     chunk_query.par_iter().for_each(|grid| {
-        for dirty in grid.write().unwrap().attributes_mut().dirty.iter_mut() {
-            *dirty = false;
-        }
+        grid.write()
+            .unwrap()
+            .attributes_mut()
+            .dirty
+            .iter_mut()
+            .for_each(|dirty| {
+                *dirty = false;
+            })
     });
 }
 
@@ -182,9 +191,7 @@ fn activate_dirty_chunks(
     chunk_params: ChunksParam,
 ) {
     for position in dirty_chunks.0.iter() {
-        let chunk = chunk_params
-            .get_chunk_entity_at(position.x, position.y)
-            .unwrap();
+        let chunk = chunk_params.get_chunk_entity_at(*position).unwrap();
 
         commands.entity(chunk).insert(ChunkActive);
 
@@ -198,7 +205,7 @@ fn activate_dirty_chunks(
 
         for neighbor in chunk_neighbors(*position)
             .iter()
-            .filter_map(|&pos| chunk_params.get_chunk_entity_at(pos.x, pos.y))
+            .filter_map(|&pos| chunk_params.get_chunk_entity_at(pos))
         {
             commands.entity(neighbor).insert(ChunkActive);
         }
@@ -224,11 +231,11 @@ pub struct FallingSandSprite {
 }
 
 fn grid_to_texture(
-    falling_sand: Query<(Entity, &FallingSandSprite, &Chunk, &ChunkPosition)>,
+    falling_sand: Query<(Entity, &FallingSandSprite, &Chunk)>,
     mut textures: ResMut<Assets<Image>>,
     mut initialized_textures: Local<HashSet<Entity>>,
 ) {
-    for (chunk_entity, falling_sand, chunk, position) in &falling_sand {
+    for (chunk_entity, falling_sand, chunk) in &falling_sand {
         if !chunk.read().unwrap().is_dirty() && initialized_textures.contains(&chunk_entity) {
             continue;
         }
@@ -264,10 +271,13 @@ impl Default for FallingSandSettings {
     }
 }
 
-#[derive(Clone, Reflect)]
+#[derive(Clone, Reflect, AsBindGroup)]
 struct ChunkImages {
+    #[storage_texture(0, image_format = Rg32Uint, access = ReadOnly)]
     pub grid_texture: Handle<Image>,
+    #[storage_texture(1, image_format = Rgba8Unorm, access = ReadOnly, dimension = "1d")]
     pub color_map: Handle<Image>,
+    #[storage_texture(2, image_format = Rgba8Unorm, access = WriteOnly)]
     pub color_texture: Handle<Image>,
 }
 
@@ -321,42 +331,8 @@ fn prepare_bind_group(
 
 impl FromWorld for FallingSandPipeline {
     fn from_world(world: &mut World) -> Self {
-        let texture_bind_group_layout = world.resource::<RenderDevice>().create_bind_group_layout(
-            "chunk_material_bind_group_layout",
-            &[
-                BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: ShaderStages::COMPUTE,
-                    ty: BindingType::StorageTexture {
-                        access: StorageTextureAccess::ReadOnly,
-                        format: TextureFormat::Rg32Uint,
-                        view_dimension: TextureViewDimension::D2,
-                    },
-                    count: None,
-                },
-                BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: ShaderStages::COMPUTE,
-                    ty: BindingType::StorageTexture {
-                        access: StorageTextureAccess::ReadOnly,
-                        format: TextureFormat::Rgba8Unorm,
-                        view_dimension: TextureViewDimension::D1,
-                    },
-                    count: None,
-                },
-                BindGroupLayoutEntry {
-                    binding: 2,
-                    visibility: ShaderStages::COMPUTE,
-                    ty: BindingType::StorageTexture {
-                        access: StorageTextureAccess::WriteOnly,
-                        format: TextureFormat::Rgba8Unorm,
-                        view_dimension: TextureViewDimension::D2,
-                    },
-                    count: None,
-                },
-            ],
-        );
-
+        let render_device = world.resource::<RenderDevice>();
+        let texture_bind_group_layout = ChunkImages::bind_group_layout(render_device);
         let shader = world
             .resource::<AssetServer>()
             .load("shaders/grid_to_texture.wgsl");

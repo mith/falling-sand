@@ -154,7 +154,7 @@ fn spawn_chunk_under_stroke(
         let unspawned_stroke_chunk_positions = stroke
             .0
             .iter()
-            .map(|pos| tile_pos_to_chunk_pos(pos.x, pos.y))
+            .map(|pos| tile_pos_to_chunk_pos(*pos))
             .unique()
             .filter(|pos| !chunk_positions.contains(pos));
         chunk_creation_params.spawn_chunks(unspawned_stroke_chunk_positions);
@@ -167,12 +167,13 @@ fn draw_particles(
     tool_state: Res<ToolState>,
     mut commands: Commands,
 ) {
-    for (entity, stroke) in stroke_query.iter() {
-        for pos in &stroke.0 {
-            grid.set_particle(pos.x, pos.y, tool_state.draw_type);
-        }
+    stroke_query.iter().for_each(|(entity, stroke)| {
+        stroke.0.iter().for_each(|pos| {
+            grid.set_particle(*pos, tool_state.draw_type);
+        });
+
         commands.entity(entity).despawn();
-    }
+    });
 }
 
 #[cfg(test)]

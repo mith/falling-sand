@@ -1,13 +1,19 @@
-use rand::Rng;
+use rand::{
+    distributions::{Distribution, Standard},
+    Rng,
+};
 
-use bevy::ecs::system::{Res, ResMut};
+use bevy::{
+    ecs::system::{Res, ResMut},
+    math::IVec2,
+};
 
 use crate::{
     chunk,
     falling_sand::FallingSandRng,
     material::{MaterialDensities, MaterialFlowing, MaterialStates, StateOfMatter},
     process_chunks::{process_chunks, process_chunks_parallel, ChunksParam},
-    util::random_dir_range,
+    util::{below, below_left, below_right, left, random_dir_range, right},
 };
 
 pub fn fall(
@@ -27,17 +33,18 @@ pub fn fall(
                 random_dir_range(rng, min_x, max_x)
             };
             for x in random_dir_range {
-                let particle = *grid.get_particle(x, y);
-                let particle_is_dirty: bool = grid.get_dirty(x, y);
+                let particle_position = IVec2::new(x, y);
+                let particle = *grid.get_particle(particle_position);
+                let particle_is_dirty: bool = grid.get_dirty(particle_position);
                 if material_states[particle.material] == StateOfMatter::Solid || particle_is_dirty {
                     continue;
                 }
 
-                let mut is_eligible_particle = |(x_b, y_b)| {
-                    let other_particle = grid.get_particle(x_b, y_b);
+                let mut is_eligible_particle = |other_particle_position| {
+                    let other_particle = grid.get_particle(other_particle_position);
                     let not_solid =
                         material_states[other_particle.material] != StateOfMatter::Solid;
-                    let not_dirty = !grid.get_dirty(x_b, y_b);
+                    let not_dirty = !grid.get_dirty(other_particle_position);
                     let not_same_material = other_particle.material != particle.material;
                     let less_dense = material_densities[particle.material]
                         > material_densities[other_particle.material];
@@ -50,44 +57,68 @@ pub fn fall(
                         && (less_dense || same_density_sometimes)
                 };
 
-                if is_eligible_particle((x, y - 1)) {
-                    grid.swap_particles((x, y), (x, y - 1));
+                let particle_below_position = below(particle_position);
+                if is_eligible_particle(particle_below_position) {
+                    grid.swap_particles(particle_position, particle_below_position);
+                    grid.center_chunk_mut()
+                        .attributes_mut()
+                        .velocity
+                        .set(particle.id, IVec2::NEG_Y);
                     continue;
                 }
 
-                let can_fall_left_down =
-                    { is_eligible_particle((x - 1, y - 1)) && is_eligible_particle((x - 1, y)) };
+                let particle_left_position = left(particle_position);
+                let particle_below_left_position = below_left(particle_position);
+                let can_fall_left_down = {
+                    is_eligible_particle(particle_below_left_position)
+                        && is_eligible_particle(particle_left_position)
+                };
 
-                let can_fall_right_down =
-                    { is_eligible_particle((x + 1, y - 1)) && is_eligible_particle((x + 1, y)) };
+                let particle_right_position = right(particle_position);
+                let particle_below_right_position = below_right(particle_position);
+                let can_fall_right_down = {
+                    is_eligible_particle(particle_below_right_position)
+                        && is_eligible_particle(particle_right_position)
+                };
 
-                if can_fall_left_down && can_fall_right_down {
+                let other_particle_position = if can_fall_left_down && can_fall_right_down {
                     let choice = grid.center_chunk_mut().rng().gen_range(0..2);
                     if choice == 0 {
-                        grid.swap_particles((x, y), (x - 1, y));
-                        grid.swap_particles((x - 1, y), (x - 1, y - 1));
-                        continue;
+                        particle_left_position
                     } else {
-                        grid.swap_particles((x, y), (x + 1, y));
-                        grid.swap_particles((x + 1, y), (x + 1, y - 1));
-                        continue;
+                        particle_right_position
                     }
-                }
-
-                if can_fall_left_down {
-                    grid.swap_particles((x, y), (x - 1, y));
-                    grid.swap_particles((x - 1, y), (x - 1, y - 1));
+                } else if can_fall_left_down {
+                    particle_left_position
+                } else if can_fall_right_down {
+                    particle_right_position
+                } else {
                     continue;
-                }
+                };
 
-                if can_fall_right_down {
-                    grid.swap_particles((x, y), (x + 1, y));
-                    grid.swap_particles((x + 1, y), (x + 1, y - 1));
-                    continue;
-                }
+                grid.swap_particles(particle_position, other_particle_position);
+                grid.center_chunk_mut()
+                    .attributes_mut()
+                    .velocity
+                    .set(particle.id, other_particle_position - particle_position);
             }
         }
     });
+}
+
+enum FlowDirection {
+    Left,
+    Right,
+}
+
+impl Distribution<FlowDirection> for Standard {
+    fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> FlowDirection {
+        match rng.gen_range(0..2) {
+            0 => FlowDirection::Left,
+            1 => FlowDirection::Right,
+            _ => unreachable!(),
+        }
+    }
 }
 
 pub fn flow(
@@ -108,17 +139,26 @@ pub fn flow(
                 random_dir_range(rng, min_x, max_x)
             };
             for x in random_dir_range {
-                let particle = *grid.get_particle(x, y);
-                let particle_is_dirty: bool = grid.get_dirty(x, y);
+                let particle_position = IVec2::new(x, y);
+                let particle = *grid.get_particle(particle_position);
+                let particle_is_dirty: bool = grid.get_dirty(particle_position);
                 if !material_flowing[particle.material] || particle_is_dirty {
                     continue;
                 }
 
-                let mut can_flow_into = |(x_b, y_b)| {
-                    let other_particle = *grid.get_particle(x_b, y_b);
+                // Don't flow on top of a less dense material
+                let particle_below_position = below(particle_position);
+                if material_densities[grid.get_particle(particle_below_position).material]
+                    < material_densities[particle.material]
+                {
+                    continue;
+                }
+
+                let mut can_flow_into = |other_particle_position| {
+                    let other_particle = *grid.get_particle(other_particle_position);
                     let not_solid =
                         material_states[other_particle.material] != StateOfMatter::Solid;
-                    let not_dirty = !grid.get_dirty(x_b, y_b);
+                    let not_dirty = !grid.get_dirty(other_particle_position);
                     let not_same_material = other_particle.material != particle.material;
                     let less_dense = material_densities[particle.material]
                         > material_densities[other_particle.material];
@@ -131,29 +171,39 @@ pub fn flow(
                         && (less_dense || same_density_sometimes)
                 };
 
-                let can_flow_left = { can_flow_into((x - 1, y)) };
-                let can_flow_right = { can_flow_into((x + 1, y)) };
+                let particle_left_position = left(particle_position);
+                let particle_right_position = right(particle_position);
+                let can_flow_left = can_flow_into(particle_left_position);
+                let can_flow_right = can_flow_into(particle_right_position);
 
-                if can_flow_left && can_flow_right {
-                    let choice = grid.center_chunk_mut().rng().gen_range(0..2);
-                    if choice == 0 {
-                        grid.swap_particles((x, y), (x - 1, y));
-                        continue;
+                let flow_direction = if can_flow_left && can_flow_right {
+                    let x_velocity = grid.get_velocity(particle_position).x;
+                    if x_velocity == 0 {
+                        grid.center_chunk_mut().rng().gen()
                     } else {
-                        grid.swap_particles((x, y), (x + 1, y));
-                        continue;
+                        match x_velocity {
+                            -1 => FlowDirection::Left,
+                            1 => FlowDirection::Right,
+                            _ => unreachable!(),
+                        }
                     }
-                }
-
-                if can_flow_left {
-                    grid.swap_particles((x, y), (x - 1, y));
+                } else if can_flow_left {
+                    FlowDirection::Left
+                } else if can_flow_right {
+                    FlowDirection::Right
+                } else {
                     continue;
-                }
+                };
 
-                if can_flow_right {
-                    grid.swap_particles((x, y), (x + 1, y));
-                    continue;
-                }
+                let other_particle_position = match flow_direction {
+                    FlowDirection::Left => particle_left_position,
+                    FlowDirection::Right => particle_right_position,
+                };
+                grid.swap_particles(particle_position, other_particle_position);
+                grid.center_chunk_mut()
+                    .attributes_mut()
+                    .velocity
+                    .set(particle.id, other_particle_position - particle_position);
             }
         }
     });

@@ -14,6 +14,36 @@ pub fn random_dir_range(rng: &mut StdRng, min: i32, max: i32) -> Box<dyn Iterato
     }
 }
 
+#[inline(always)]
+pub const fn below(IVec2 { x, y }: IVec2) -> IVec2 {
+    IVec2 { x, y: y - 1 }
+}
+
+#[inline(always)]
+pub const fn above(IVec2 { x, y }: IVec2) -> IVec2 {
+    IVec2 { x, y: y + 1 }
+}
+
+#[inline(always)]
+pub const fn left(IVec2 { x, y }: IVec2) -> IVec2 {
+    IVec2 { x: x - 1, y }
+}
+
+#[inline(always)]
+pub const fn right(IVec2 { x, y }: IVec2) -> IVec2 {
+    IVec2 { x: x + 1, y }
+}
+
+#[inline(always)]
+pub const fn below_left(IVec2 { x, y }: IVec2) -> IVec2 {
+    IVec2 { x: x - 1, y: y - 1 }
+}
+
+#[inline(always)]
+pub const fn below_right(IVec2 { x, y }: IVec2) -> IVec2 {
+    IVec2 { x: x + 1, y: y - 1 }
+}
+
 pub fn chunk_neighbors(chunk_position: IVec2) -> [IVec2; 8] {
     [
         IVec2::new(chunk_position.x - 1, chunk_position.y - 1),
@@ -53,6 +83,7 @@ pub fn chunk_pos_with_neighbor_positions(chunk_pos: IVec2) -> [IVec2; 9] {
         IVec2::new(chunk_pos.x + 1, chunk_pos.y + 1),
     ]
 }
+
 #[cfg(test)]
 mod test {
     use rand::SeedableRng;

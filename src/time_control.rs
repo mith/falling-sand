@@ -1,25 +1,49 @@
 use bevy::{
-    app::{App, Plugin, Update},
-    ecs::system::{Res, ResMut},
+    app::{App, FixedUpdate, Plugin, Update},
+    ecs::{
+        schedule::Stepping,
+        system::{Res, ResMut},
+    },
     input::{keyboard::KeyCode, ButtonInput},
-    time::{Time, Virtual},
+    log::{debug, info},
 };
 
 pub struct TimeControlPlugin;
 
 impl Plugin for TimeControlPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Update, time_control);
+        let mut stepping = Stepping::default();
+        stepping.add_schedule(FixedUpdate);
+        app.add_systems(Update, handle_input)
+            .insert_resource(stepping);
     }
 }
 
-fn time_control(mut time: ResMut<Time<Virtual>>, keyboard_input: Res<ButtonInput<KeyCode>>) {
-    /*     let pause_text = if time.is_paused() { "Resume" } else { "Pause" };
-    if ui.button(pause_text).clicked() || keyboard_input.just_pressed(KeyCode::Space) {
-        if time.is_paused() {
-            time.unpause();
+fn handle_input(keyboard_input: Res<ButtonInput<KeyCode>>, mut stepping: ResMut<Stepping>) {
+    if keyboard_input.just_pressed(KeyCode::Slash) {
+        info!("{:#?}", stepping);
+    }
+    // grave key to toggle stepping mode for the FixedUpdate schedule
+    if keyboard_input.just_pressed(KeyCode::Backquote) {
+        if stepping.is_enabled() {
+            stepping.disable();
+            debug!("disabled stepping");
         } else {
-            time.pause();
+            stepping.enable();
+            debug!("enabled stepping");
         }
-    } */
+    }
+
+    if !stepping.is_enabled() {
+        return;
+    }
+
+    // space key will step the remainder of this frame
+    if keyboard_input.just_pressed(KeyCode::Space) {
+        debug!("continue");
+        stepping.continue_frame();
+    } else if keyboard_input.just_pressed(KeyCode::KeyS) {
+        debug!("stepping frame");
+        stepping.step_frame();
+    }
 }

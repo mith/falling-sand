@@ -9,11 +9,12 @@ edition = "2021"
 [profile.release]
 lto = "thin"
 
-[profile.dev.package."*"]
-opt-level = 3
-
-[profile.dev]
+[profile.debug-opt]
+inherits = "dev"
 opt-level = 1
+
+[profile.debug-opt.package."*"]
+opt-level = 3
 
 [dependencies.bevy]
 version = "0.13"
