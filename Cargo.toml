@@ -9,11 +9,15 @@ edition = "2021"
 [profile.release]
 lto = "thin"
 
-[profile.debug-opt]
+[profile.release-debug]
+inherits = "release"
+debug = 1
+
+[profile.dev-opt]
 inherits = "dev"
 opt-level = 1
 
-[profile.debug-opt.package."*"]
+[profile.dev-opt.package."*"]
 opt-level = 3
 
 [dependencies.bevy]
@@ -67,3 +71,5 @@ smallvec = { version = "1.13.1", features = [
     "serde",
     "write",
 ] }
+morton-encoding = "2.0.1"
+quadtree_rs = "0.1.3"

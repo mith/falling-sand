@@ -1,4 +1,7 @@
-use bevy::ecs::system::{Res, ResMut};
+use bevy::{
+    ecs::system::{Res, ResMut},
+    log::info_span,
+};
 use rand::seq::SliceRandom;
 use smallvec::SmallVec;
 
@@ -12,6 +15,8 @@ type ReactionChoices = SmallVec<[(Material, u32); 8]>;
 
 pub fn react(mut grid: ChunksParam, material_reactions: Res<MaterialReactions>) {
     process_chunks_parallel(&mut grid, |chunk_pos, grid| {
+        let span = info_span!("react_closure");
+        let _guard = span.enter();
         let chunk_size = grid.chunk_size();
         let min_y = chunk_pos.y * chunk_size.y;
         let max_y = (chunk_pos.y + 1) * chunk_size.y;
@@ -20,7 +25,7 @@ pub fn react(mut grid: ChunksParam, material_reactions: Res<MaterialReactions>) 
             let max_x = (chunk_pos.x + 1) * chunk_size.x;
             for x in random_dir_range(grid.center_chunk_mut().rng(), min_x, max_x) {
                 let particle_position = (x, y).into();
-                let particle = grid.get_particle(particle_position);
+                let particle = *grid.get_particle(particle_position);
                 let particle_is_dirty: bool = grid.get_dirty(particle_position);
                 if particle_is_dirty || !material_reactions.has_reactions_for(particle.material) {
                     continue;
@@ -34,7 +39,7 @@ pub fn react(mut grid: ChunksParam, material_reactions: Res<MaterialReactions>) 
                             continue;
                         }
                         let adjecant_particle_position = (x + dx, y + dy).into();
-                        let adjacent_particle = grid.get_particle(adjecant_particle_position);
+                        let adjacent_particle = *grid.get_particle(adjecant_particle_position);
                         if grid.get_dirty(adjecant_particle_position) {
                             continue;
                         }
@@ -44,15 +49,15 @@ pub fn react(mut grid: ChunksParam, material_reactions: Res<MaterialReactions>) 
                             // Add the probability of the reaction to the existing reaction if it exists
                             // or create a new reaction with the probability of the reaction
                             let reaction_probability = reaction.probability();
-                            let reaction_material = reaction.product_material();
+                            let reaction_product = reaction.product_material();
 
                             let existing_reaction = probable_reactions
                                 .iter_mut()
-                                .find(|(m, _)| *m == reaction_material);
+                                .find(|(m, _)| *m == reaction_product);
                             if let Some((_, prob)) = existing_reaction {
                                 *prob += reaction_probability;
                             } else {
-                                probable_reactions.push((reaction_material, reaction_probability));
+                                probable_reactions.push((reaction_product, reaction_probability));
                             }
                         }
                     }
@@ -74,11 +79,14 @@ pub fn react(mut grid: ChunksParam, material_reactions: Res<MaterialReactions>) 
 
                 probable_reactions.push((particle.material, change_for_no_reaction));
 
-                let r = probable_reactions
+                let r = *probable_reactions
                     .choose_weighted(grid.center_chunk_mut().rng(), |(_, probability)| {
                         *probability
-                    });
-                grid.set_particle(particle_position, r.unwrap().0);
+                    })
+                    .unwrap();
+                if r.0 != particle.material {
+                    grid.set_particle(particle_position, r.0);
+                }
             }
         }
     });

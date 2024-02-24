@@ -8,7 +8,6 @@ use bevy::{
         system::{Commands, Local, Query, Res, ResMut, Resource},
     },
     input::{keyboard::KeyCode, mouse::MouseButton, ButtonInput},
-    log::info,
     math::{IVec2, Vec2},
     reflect::Reflect,
     time::{Time, Timer},
@@ -156,7 +155,7 @@ fn spawn_chunk_under_stroke(
             .iter()
             .map(|pos| tile_pos_to_chunk_pos(*pos))
             .unique()
-            .filter(|pos| !chunk_positions.contains(pos));
+            .filter(|pos| !chunk_positions.contains(*pos));
         chunk_creation_params.spawn_chunks(unspawned_stroke_chunk_positions);
     }
 }

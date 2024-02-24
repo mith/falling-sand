@@ -1,9 +1,4 @@
-use std::{
-    borrow::Cow,
-    hash::Hash,
-    sync::{Arc, RwLock},
-    time::Duration,
-};
+use std::{borrow::Cow, time::Duration};
 
 use bevy::{
     ecs::system::SystemParam,
@@ -11,24 +6,18 @@ use bevy::{
     render::{
         render_asset::RenderAssetUsages,
         render_graph::RenderLabel,
-        render_resource::{
-            binding_types::texture_storage_2d, AsBindGroup, BindGroupEntries,
-            BindGroupLayoutEntries, CachedPipelineState, DynamicStorageBuffer,
-        },
-        texture, Render,
+        render_resource::{AsBindGroup, BindGroupEntries, CachedPipelineState},
+        Render,
     },
-    transform::commands,
-    ui::update,
     utils::{HashMap, HashSet},
 };
 
 use bevy::render::extract_resource::{ExtractResource, ExtractResourcePlugin};
 use bevy::render::render_asset::RenderAssets;
 use bevy::render::render_resource::{
-    BindGroup, BindGroupLayout, BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingType,
-    CachedComputePipelineId, ComputePassDescriptor, ComputePipelineDescriptor, Extent3d,
-    PipelineCache, ShaderStages, StorageTextureAccess, TextureDimension, TextureFormat,
-    TextureUsages, TextureViewDimension,
+    BindGroup, BindGroupLayout, CachedComputePipelineId, ComputePassDescriptor,
+    ComputePipelineDescriptor, Extent3d, PipelineCache, TextureDimension, TextureFormat,
+    TextureUsages,
 };
 use bevy::render::renderer::RenderDevice;
 use bevy::render::{render_graph, RenderApp, RenderSet};
@@ -40,14 +29,13 @@ use rand::{rngs::StdRng, SeedableRng};
 use crate::{
     chunk::{Chunk, ChunkData},
     falling_sand_grid::{
-        update_chunk_positions, ChunkActive, ChunkPosition, ChunkPositions, CHUNK_LENGTH,
-        CHUNK_SIZE,
+        update_active_chunks, update_chunk_positions, ActiveChunks, ChunkActive, ChunkPosition,
+        ChunkPositions, CHUNK_SIZE,
     },
     fire::fire_to_smoke,
     material::MaterialIterator,
     material::{Material, MaterialColor, MaterialPlugin},
     movement::{fall, flow},
-    particle_grid::Particle,
     process_chunks::ChunksParam,
     reactions::react,
     util::{chunk_neighbors, chunk_neighbors_n},
@@ -82,6 +70,7 @@ impl Plugin for FallingSandPlugin {
         .insert_resource(self.settings.clone())
         .insert_resource(FallingSandRng(StdRng::seed_from_u64(0)))
         .init_resource::<ChunkPositions>()
+        .init_resource::<ActiveChunks>()
         .init_resource::<DirtyChunks>()
         .init_resource::<DirtyOrCreatedChunks>()
         .init_resource::<FallingSandImages>()
@@ -92,7 +81,7 @@ impl Plugin for FallingSandPlugin {
         .add_systems(
             FixedUpdate,
             ((
-                update_chunk_positions,
+                (update_chunk_positions, update_active_chunks),
                 clean_particles,
                 fall,
                 clean_particles,
@@ -193,7 +182,7 @@ fn activate_dirty_chunks(
     for position in dirty_chunks.0.iter() {
         let chunk = chunk_params.get_chunk_entity_at(*position).unwrap();
 
-        commands.entity(chunk).insert(ChunkActive);
+        commands.entity(*chunk).insert(ChunkActive);
 
         let chunk_neighbors_2 = chunk_neighbors_n(*position, 2);
         let unspawned_neighbors = chunk_neighbors_2
@@ -207,7 +196,7 @@ fn activate_dirty_chunks(
             .iter()
             .filter_map(|&pos| chunk_params.get_chunk_entity_at(pos))
         {
-            commands.entity(neighbor).insert(ChunkActive);
+            commands.entity(*neighbor).insert(ChunkActive);
         }
     }
 }

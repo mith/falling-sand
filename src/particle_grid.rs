@@ -15,9 +15,9 @@ pub struct Particle {
     pub id: ParticleId,
 }
 
-impl Into<u64> for Particle {
-    fn into(self) -> u64 {
-        unsafe { std::mem::transmute(self) }
+impl From<Particle> for u64 {
+    fn from(val: Particle) -> Self {
+        unsafe { std::mem::transmute(val) }
     }
 }
 

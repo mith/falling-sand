@@ -72,7 +72,7 @@ impl ChunkData {
     }
 
     pub fn swap_particles(&mut self, a: IVec2, b: IVec2) {
-        // Mark the particles as dirty
+        // MaRk the particles as dirty
         let a_id = self
             .particles
             .array()

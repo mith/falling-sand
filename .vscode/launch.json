@@ -7,7 +7,7 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug executable 'falling-sand' (debug)",
+            "name": "Debug executable 'falling-sand' (dev)",
             "cargo": {
                 "args": [
                     "build",
@@ -30,14 +30,14 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug executable 'falling-sand' (debug-opt)",
+            "name": "Debug executable 'falling-sand' (dev-opt)",
             "cargo": {
                 "args": [
                     "build",
                     "--bin=falling-sand",
                     "--package=falling-sand",
-                    "--profile=debug-opt",
-                    // "--features=bevy/trace_chrome"
+                    "--profile=dev-opt",
+                    "--features=bevy/trace_chrome"
                 ],
                 "filter": {
                     "name": "falling-sand",
@@ -46,6 +46,29 @@
             },
             "args": [],
             "cwd": "${workspaceFolder}",
+            "env": {
+                "CARGO_MANIFEST_DIR": "${workspaceFolder}",
+                "MANGOHUD": "1",
+                "WINIT_UNIX_BACKEND": "wayland",
+            }
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug executable 'falling-sand' (release-debug)",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--profile=release-debug",
+                    "--bin=falling-sand",
+                    "--package=falling-sand",
+                    "--features=bevy/trace_tracy"
+                ],
+                "filter": {
+                    "name": "falling-sand",
+                    "kind": "bin"
+                }
+            },
             "env": {
                 "CARGO_MANIFEST_DIR": "${workspaceFolder}",
                 "MANGOHUD": "1",
@@ -61,8 +84,7 @@
                     "build",
                     "--release",
                     "--bin=falling-sand",
-                    "--package=falling-sand",
-                    // "--features=bevy/trace_chrome"
+                    "--package=falling-sand"
                 ],
                 "filter": {
                     "name": "falling-sand",
