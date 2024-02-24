@@ -7,14 +7,14 @@ use smallvec::SmallVec;
 
 use crate::{
     material::{Material, MaterialReactions},
-    process_chunks::{process_chunks_parallel, ChunksParam},
+    process_chunks::{process_chunks, ChunksParam},
     util::random_dir_range,
 };
 
 type ReactionChoices = SmallVec<[(Material, u32); 8]>;
 
 pub fn react(mut grid: ChunksParam, material_reactions: Res<MaterialReactions>) {
-    process_chunks_parallel(&mut grid, |chunk_pos, grid| {
+    process_chunks(&mut grid, |chunk_pos, grid| {
         let span = info_span!("react_closure");
         let _guard = span.enter();
         let chunk_size = grid.chunk_size();

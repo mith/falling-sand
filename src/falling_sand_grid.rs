@@ -1,10 +1,9 @@
 use std::{
-    hash::Hasher,
     ops::{Deref, DerefMut},
     sync::{Arc, RwLock, RwLockWriteGuard},
 };
 
-use itertools::Itertools;
+use ndarray::{s, Array2};
 use paste::paste;
 use quadtree_rs::{area::AreaBuilder, Quadtree};
 
@@ -18,6 +17,7 @@ use bevy::{
     math::{IVec2, Vec2},
     utils::{hashbrown::HashMap, HashSet},
 };
+use smallvec::SmallVec;
 
 use crate::{
     chunk::{Chunk, ChunkData},
@@ -49,26 +49,28 @@ pub fn tile_pos_to_chunk_pos(IVec2 { x, y }: IVec2) -> IVec2 {
 
 #[derive(Resource)]
 pub struct ChunkPositions {
-    tree: Quadtree<i32, Entity>,
+    positions: Array2<Option<Entity>>,
     offset: IVec2,
 }
 
 impl Default for ChunkPositions {
     fn default() -> Self {
         ChunkPositions {
-            tree: Quadtree::new(4),
+            positions: Array2::default((0, 0)),
             offset: IVec2::ZERO,
         }
     }
 }
 
 impl ChunkPositions {
-    pub fn get_chunk_at(&self, position: IVec2) -> Option<&Entity> {
-        let area = AreaBuilder::default()
-            .anchor((position.x + self.offset.x, position.y + self.offset.y).into())
-            .build()
-            .unwrap();
-        self.tree.query(area).next().map(|e| e.value_ref())
+    pub fn get_chunk_at(&self, position: IVec2) -> Option<Entity> {
+        *self
+            .positions
+            .get((
+                (position.x + self.offset.x) as usize,
+                (position.y + self.offset.y) as usize,
+            ))
+            .unwrap_or(&None)
     }
 
     pub fn contains(&self, position: IVec2) -> bool {
@@ -99,30 +101,81 @@ pub fn update_chunk_positions(
     let offset = (min_bounds.x.min(0).abs(), min_bounds.y.min(0).abs()).into();
     chunk_positions.offset = offset;
 
-    let depth = {
-        let max_bounds = max_bounds + offset;
-        let max_coord = max_bounds.x.abs().max(max_bounds.y.abs());
+    let size = max_bounds + offset + IVec2::ONE;
 
-        let mut depth = 0;
-        let mut size = 1;
+    chunk_positions.positions = Array2::default((size.x as usize, size.y as usize));
 
-        while size < max_coord {
-            size *= 2;
-            depth += 1;
+    for (entity, pos) in chunk_positions_query.iter() {
+        let pos = pos.0 + offset;
+        chunk_positions.positions[(pos.x as usize, pos.y as usize)] = Some(entity);
+    }
+}
+
+#[derive(Resource)]
+pub struct ChunkPositionsData {
+    positions: Array2<Option<Chunk>>,
+    offset: IVec2,
+}
+
+impl Default for ChunkPositionsData {
+    fn default() -> Self {
+        ChunkPositionsData {
+            positions: Array2::default((0, 0)),
+            offset: IVec2::ZERO,
         }
-        depth.max(2)
-    };
+    }
+}
 
-    chunk_positions.tree = Quadtree::new(depth * 2);
+impl ChunkPositionsData {
+    pub fn get_chunk_at(&self, position: IVec2) -> Option<&Chunk> {
+        let Some(chunk) = self
+            .positions
+            .get((
+                (position.x + self.offset.x) as usize,
+                (position.y + self.offset.y) as usize,
+            ))
+            .unwrap_or(&None)
+        else {
+            return None;
+        };
+        Some(chunk)
+    }
 
-    for (entity, position) in chunk_positions_query.iter() {
-        chunk_positions
-            .tree
-            .insert_pt(
-                (position.0.x + offset.x, position.0.y + offset.y).into(),
-                entity,
-            )
-            .expect("Failed to insert chunk");
+    pub fn contains(&self, position: IVec2) -> bool {
+        self.get_chunk_at(position).is_some()
+    }
+}
+
+pub fn update_chunk_positions_data(
+    mut chunk_positions: ResMut<ChunkPositionsData>,
+    new_chunks: Query<(Entity, &ChunkPosition), Added<ChunkPosition>>,
+    chunk_positions_query: Query<(&Chunk, &ChunkPosition)>,
+) {
+    if new_chunks.is_empty() {
+        return;
+    }
+
+    // Get the max bounds of the chunks to determine the depth of the quadtree
+    let (min_bounds, max_bounds) =
+        chunk_positions_query
+            .iter()
+            .fold((IVec2::MAX, IVec2::MIN), |(min, max), (_, pos)| {
+                (
+                    IVec2::new(min.x.min(pos.0.x), min.y.min(pos.0.y)),
+                    IVec2::new(max.x.max(pos.0.x), max.y.max(pos.0.y)),
+                )
+            });
+
+    let offset = (min_bounds.x.min(0).abs(), min_bounds.y.min(0).abs()).into();
+    chunk_positions.offset = offset;
+
+    let size = max_bounds + offset + IVec2::ONE;
+
+    chunk_positions.positions = Array2::default((size.x as usize, size.y as usize));
+
+    for (chunk, pos) in chunk_positions_query.iter() {
+        let pos = pos.0 + offset;
+        chunk_positions.positions[(pos.x as usize, pos.y as usize)] = Some(chunk.clone());
     }
 }
 
@@ -162,7 +215,7 @@ impl<'w, 's> FallingSandGridQuery<'w, 's> {
         self.active_chunks.iter().map(|(_, pos)| pos.0).collect()
     }
 
-    pub fn get_chunk_entity_at(&self, position: IVec2) -> Option<&Entity> {
+    pub fn get_chunk_entity_at(&self, position: IVec2) -> Option<Entity> {
         self.chunk_positions.get_chunk_at(position)
     }
 
@@ -171,7 +224,7 @@ impl<'w, 's> FallingSandGridQuery<'w, 's> {
     }
 
     fn get_chunk_data(&self, position: IVec2) -> Arc<RwLock<ChunkData>> {
-        let chunk_entity = *self.get_chunk_entity_at(position).unwrap();
+        let chunk_entity = self.get_chunk_entity_at(position).unwrap();
         self.chunks.get(chunk_entity).unwrap().clone().0.clone()
     }
 
@@ -207,9 +260,9 @@ impl<'w, 's> FallingSandGridQuery<'w, 's> {
     pub fn set_chunk_active(&mut self, chunk_position: IVec2, active: bool) {
         let chunk_entity = self.get_chunk_entity_at(chunk_position).unwrap();
         if active {
-            self.commands.entity(*chunk_entity).insert(ChunkActive);
+            self.commands.entity(chunk_entity).insert(ChunkActive);
         } else {
-            self.commands.entity(*chunk_entity).remove::<ChunkActive>();
+            self.commands.entity(chunk_entity).remove::<ChunkActive>();
         }
     }
 }
@@ -378,18 +431,16 @@ define_attributes_and_swap! {
 }
 
 pub struct ChunkNeighborhoodView<'a> {
-    chunk_refs: Vec<(IVec2, RwLockWriteGuard<'a, ChunkData>)>,
+    chunk_refs: SmallVec<[(IVec2, RwLockWriteGuard<'a, ChunkData>); 9]>,
 }
 
 impl ChunkNeighborhoodView<'_> {
     pub fn new<'a>(
-        center_chunk: &'a (IVec2, &Arc<RwLock<ChunkData>>),
-        neighbors: &'a [(IVec2, &Arc<RwLock<ChunkData>>)],
+        center_chunk: (IVec2, &'a Chunk),
+        neighbors: impl Iterator<Item = (IVec2, &'a Chunk)>,
     ) -> ChunkNeighborhoodView<'a> {
-        let mut chunk_refs = neighbors
-            .iter()
-            .map(|(pos, chunk)| (*pos, chunk.write().unwrap()))
-            .collect_vec();
+        let mut chunk_refs =
+            SmallVec::from_iter(neighbors.map(|(pos, chunk)| (pos, chunk.write().unwrap())));
         chunk_refs.push((center_chunk.0, center_chunk.1.write().unwrap()));
         ChunkNeighborhoodView { chunk_refs }
     }
@@ -522,27 +573,54 @@ mod test {
 
         app.world.init_resource::<ChunkPositions>();
         let chunk_0_0 = app.world.spawn(ChunkPosition(IVec2::new(0, 0))).id();
-
         let chunk_1_0 = app.world.spawn(ChunkPosition(IVec2::new(1, 0))).id();
         let chunk_neg_1_0 = app.world.spawn(ChunkPosition(IVec2::new(-1, 0))).id();
+
+        let chunk_10_10 = app.world.spawn(ChunkPosition(IVec2::new(10, 10))).id();
+        let chunk_neg_10_10 = app.world.spawn(ChunkPosition(IVec2::new(-10, -10))).id();
+
+        let chunk_100_100 = app.world.spawn(ChunkPosition(IVec2::new(100, 100))).id();
+        let chunk_neg_100_100 = app.world.spawn(ChunkPosition(IVec2::new(-100, -100))).id();
 
         app.update();
 
         let chunk_positions = app.world.get_resource::<ChunkPositions>().unwrap();
         assert_eq!(
             chunk_positions.get_chunk_at(IVec2::new(0, 0)),
-            Some(&chunk_0_0),
+            Some(chunk_0_0),
             "Chunk 0, 0 not found"
         );
         assert_eq!(
             chunk_positions.get_chunk_at(IVec2::new(1, 0)),
-            Some(&chunk_1_0),
+            Some(chunk_1_0),
             "Chunk 1, 0 not found"
         );
         assert_eq!(
             chunk_positions.get_chunk_at(IVec2::new(-1, 0)),
-            Some(&chunk_neg_1_0),
+            Some(chunk_neg_1_0),
             "Chunk -1, 0 not found"
+        );
+
+        assert_eq!(
+            chunk_positions.get_chunk_at(IVec2::new(10, 10)),
+            Some(chunk_10_10),
+            "Chunk 10, 10 not found"
+        );
+        assert_eq!(
+            chunk_positions.get_chunk_at(IVec2::new(-10, -10)),
+            Some(chunk_neg_10_10),
+            "Chunk -10, -10 not found"
+        );
+
+        assert_eq!(
+            chunk_positions.get_chunk_at(IVec2::new(100, 100)),
+            Some(chunk_100_100),
+            "Chunk 100, 100 not found"
+        );
+        assert_eq!(
+            chunk_positions.get_chunk_at(IVec2::new(-100, -100)),
+            Some(chunk_neg_100_100),
+            "Chunk -100, -100 not found"
         );
     }
 }

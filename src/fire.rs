@@ -3,11 +3,11 @@ use rand::Rng;
 
 use crate::{
     material::Material,
-    process_chunks::{process_chunks_parallel, ChunksParam},
+    process_chunks::{process_chunks, ChunksParam},
 };
 
 pub fn fire_to_smoke(mut grid: ChunksParam) {
-    process_chunks_parallel(&mut grid, |chunk_pos, grid| {
+    process_chunks(&mut grid, |chunk_pos, grid| {
         let chunk_size = grid.chunk_size();
         let min_y = chunk_pos.y * chunk_size.y;
         let max_y = (chunk_pos.y + 1) * chunk_size.y;

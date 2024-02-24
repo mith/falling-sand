@@ -29,8 +29,8 @@ use rand::{rngs::StdRng, SeedableRng};
 use crate::{
     chunk::{Chunk, ChunkData},
     falling_sand_grid::{
-        update_active_chunks, update_chunk_positions, ActiveChunks, ChunkActive, ChunkPosition,
-        ChunkPositions, CHUNK_SIZE,
+        update_active_chunks, update_chunk_positions, update_chunk_positions_data, ActiveChunks,
+        ChunkActive, ChunkPosition, ChunkPositions, ChunkPositionsData, CHUNK_SIZE,
     },
     fire::fire_to_smoke,
     material::MaterialIterator,
@@ -70,6 +70,7 @@ impl Plugin for FallingSandPlugin {
         .insert_resource(self.settings.clone())
         .insert_resource(FallingSandRng(StdRng::seed_from_u64(0)))
         .init_resource::<ChunkPositions>()
+        .init_resource::<ChunkPositionsData>()
         .init_resource::<ActiveChunks>()
         .init_resource::<DirtyChunks>()
         .init_resource::<DirtyOrCreatedChunks>()
@@ -81,7 +82,11 @@ impl Plugin for FallingSandPlugin {
         .add_systems(
             FixedUpdate,
             ((
-                (update_chunk_positions, update_active_chunks),
+                (
+                    update_chunk_positions,
+                    update_active_chunks,
+                    update_chunk_positions_data,
+                ),
                 clean_particles,
                 fall,
                 clean_particles,
@@ -182,7 +187,7 @@ fn activate_dirty_chunks(
     for position in dirty_chunks.0.iter() {
         let chunk = chunk_params.get_chunk_entity_at(*position).unwrap();
 
-        commands.entity(*chunk).insert(ChunkActive);
+        commands.entity(chunk).insert(ChunkActive);
 
         let chunk_neighbors_2 = chunk_neighbors_n(*position, 2);
         let unspawned_neighbors = chunk_neighbors_2
@@ -196,7 +201,7 @@ fn activate_dirty_chunks(
             .iter()
             .filter_map(|&pos| chunk_params.get_chunk_entity_at(pos))
         {
-            commands.entity(*neighbor).insert(ChunkActive);
+            commands.entity(neighbor).insert(ChunkActive);
         }
     }
 }

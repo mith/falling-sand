@@ -1,14 +1,15 @@
 use bevy::{math::IVec2, utils::HashSet};
+use smallvec::SmallVec;
 
 /// Iterator for iterating over active chunks in a sparse grid pattern.
 /// The chunks in each returned set are guaranteed to be at least 2 chunks apart.
 pub struct SparseGridIterator {
-    active_chunks: Vec<IVec2>,
+    active_chunks: SmallVec<[IVec2; 10]>,
     iteration: i32,
 }
 
 impl SparseGridIterator {
-    pub fn new(active_chunks: Vec<IVec2>) -> SparseGridIterator {
+    pub fn new(active_chunks: SmallVec<[IVec2; 10]>) -> SparseGridIterator {
         // Clone the active chunks from the grid
 
         SparseGridIterator {
@@ -19,13 +20,13 @@ impl SparseGridIterator {
 }
 
 impl Iterator for SparseGridIterator {
-    type Item = HashSet<IVec2>;
+    type Item = SmallVec<[IVec2; 10]>;
 
     fn next(&mut self) -> Option<Self::Item> {
         while self.iteration < 9 {
             let current_iteration = self.iteration;
             self.iteration += 1;
-            let iteration_chunks: HashSet<IVec2> = self
+            let iteration_chunks: Self::Item = self
                 .active_chunks
                 .iter()
                 .filter(|pos| {
@@ -92,15 +93,42 @@ mod test {
         ]);
         let mut iter = SparseGridIterator::new(active_chunks.into_iter().collect());
 
-        assert_eq!(iter.next(), Some(HashSet::from([IVec2::new(0, 0)])));
-        assert_eq!(iter.next(), Some(HashSet::from([IVec2::new(1, 0)])));
-        assert_eq!(iter.next(), Some(HashSet::from([IVec2::new(2, 0)])));
-        assert_eq!(iter.next(), Some(HashSet::from([IVec2::new(0, 1)])));
-        assert_eq!(iter.next(), Some(HashSet::from([IVec2::new(1, 1)])));
-        assert_eq!(iter.next(), Some(HashSet::from([IVec2::new(2, 1)])));
-        assert_eq!(iter.next(), Some(HashSet::from([IVec2::new(0, 2)])));
-        assert_eq!(iter.next(), Some(HashSet::from([IVec2::new(1, 2)])));
-        assert_eq!(iter.next(), Some(HashSet::from([IVec2::new(2, 2)])));
+        assert_eq!(
+            iter.next(),
+            Some(SmallVec::<[IVec2; 10]>::from([IVec2::new(0, 0)]))
+        );
+        assert_eq!(
+            iter.next(),
+            Some(SmallVec::<[IVec2; 10]>::from([IVec2::new(1, 0)]))
+        );
+        assert_eq!(
+            iter.next(),
+            Some(SmallVec::<[IVec2; 10]>::from([IVec2::new(2, 0)]))
+        );
+        assert_eq!(
+            iter.next(),
+            Some(SmallVec::<[IVec2; 10]>::from([IVec2::new(0, 1)]))
+        );
+        assert_eq!(
+            iter.next(),
+            Some(SmallVec::<[IVec2; 10]>::from([IVec2::new(1, 1)]))
+        );
+        assert_eq!(
+            iter.next(),
+            Some(SmallVec::<[IVec2; 10]>::from([IVec2::new(2, 1)]))
+        );
+        assert_eq!(
+            iter.next(),
+            Some(SmallVec::<[IVec2; 10]>::from([IVec2::new(0, 2)]))
+        );
+        assert_eq!(
+            iter.next(),
+            Some(SmallVec::<[IVec2; 10]>::from([IVec2::new(1, 2)]))
+        );
+        assert_eq!(
+            iter.next(),
+            Some(SmallVec::<[IVec2; 10]>::from([IVec2::new(2, 2)]))
+        );
         assert_eq!(iter.next(), None);
     }
 
@@ -117,13 +145,13 @@ mod test {
         ]);
         let mut iter = SparseGridIterator::new(active_chunks.into_iter().collect());
 
-        assert_eq!(iter.next(), Some(HashSet::from([IVec2::new(0, 0)])));
-        assert_eq!(iter.next(), Some(HashSet::from([IVec2::new(1, 0)])));
-        assert_eq!(iter.next(), Some(HashSet::from([IVec2::new(2, 0)])));
-        assert_eq!(iter.next(), Some(HashSet::from([IVec2::new(1, 1)])));
-        assert_eq!(iter.next(), Some(HashSet::from([IVec2::new(2, 1)])));
-        assert_eq!(iter.next(), Some(HashSet::from([IVec2::new(0, 2)])));
-        assert_eq!(iter.next(), Some(HashSet::from([IVec2::new(1, 2)])));
+        assert_eq!(iter.next(), Some(Vec::from([IVec2::new(0, 0)])));
+        assert_eq!(iter.next(), Some(Vec::from([IVec2::new(1, 0)])));
+        assert_eq!(iter.next(), Some(Vec::from([IVec2::new(2, 0)])));
+        assert_eq!(iter.next(), Some(Vec::from([IVec2::new(1, 1)])));
+        assert_eq!(iter.next(), Some(Vec::from([IVec2::new(2, 1)])));
+        assert_eq!(iter.next(), Some(Vec::from([IVec2::new(0, 2)])));
+        assert_eq!(iter.next(), Some(Vec::from([IVec2::new(1, 2)])));
         assert_eq!(iter.next(), None);
     }
 
@@ -134,7 +162,7 @@ mod test {
 
         assert_eq!(
             iter.next(),
-            Some(HashSet::from([
+            Some(Vec::from([
                 IVec2::new(0, 0),
                 IVec2::new(-3, 0),
                 IVec2::new(3, 0)

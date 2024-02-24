@@ -13,7 +13,7 @@ use crate::{
     particle_grid::{Particle, ParticleGrid},
 };
 
-#[derive(Component, Deref, DerefMut)]
+#[derive(Component, Deref, DerefMut, Clone)]
 pub struct Chunk(pub Arc<RwLock<ChunkData>>);
 
 impl Chunk {

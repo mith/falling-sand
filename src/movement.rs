@@ -5,7 +5,7 @@ use bevy::{ecs::system::Res, log::info_span, math::IVec2};
 use crate::{
     falling_sand_grid::ChunkNeighborhoodView,
     material::{MaterialDensities, MaterialFlowing, MaterialStates, StateOfMatter},
-    process_chunks::{process_chunks_parallel, ChunksParam},
+    process_chunks::{process_chunks, ChunksParam},
     util::{below, below_left, below_right, left, random_dir_range, right},
 };
 
@@ -14,7 +14,7 @@ pub fn fall(
     material_states: Res<MaterialStates>,
     material_densities: Res<MaterialDensities>,
 ) {
-    process_chunks_parallel(&mut grid, |chunk_pos, grid| {
+    process_chunks(&mut grid, |chunk_pos, grid| {
         fall_chunk(grid, chunk_pos, &material_states, &material_densities)
     });
 }
@@ -115,7 +115,7 @@ pub fn flow(
     material_densities: Res<MaterialDensities>,
     material_flowing: Res<MaterialFlowing>,
 ) {
-    process_chunks_parallel(&mut grid, |chunk_pos, grid| {
+    process_chunks(&mut grid, |chunk_pos, grid| {
         flow_chunk(
             grid,
             chunk_pos,
