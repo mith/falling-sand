@@ -46,19 +46,13 @@ fn fall_chunk(
             }
 
             let mut is_eligible_particle = |other_particle_position| {
-                let other_particle = grid.get_particle(other_particle_position);
-                let not_solid = material_states[other_particle.material] != StateOfMatter::Solid;
-                let not_dirty = !grid.get_dirty(other_particle_position);
-                let not_same_material = other_particle.material != particle.material;
-                let less_dense = material_densities[particle.material]
-                    > material_densities[other_particle.material];
-                let same_density_sometimes = material_densities[particle.material]
-                    == material_densities[other_particle.material]
-                    && grid.center_chunk_mut().rng().gen_bool(0.01);
-                not_solid
-                    && not_dirty
-                    && not_same_material
-                    && (less_dense || same_density_sometimes)
+                can_fall_into(
+                    grid,
+                    other_particle_position,
+                    material_states,
+                    particle,
+                    material_densities,
+                )
             };
 
             let particle_below_position = below(particle_position);
@@ -109,13 +103,36 @@ fn fall_chunk(
     }
 }
 
+fn can_fall_into(
+    grid: &mut ChunkNeighborhoodView<'_>,
+    other_particle_position: IVec2,
+    material_states: &MaterialStates,
+    particle: crate::particle_grid::Particle,
+    material_densities: &MaterialDensities,
+) -> bool {
+    let other_particle = *grid.get_particle(other_particle_position);
+    if other_particle.material == particle.material {
+        return false;
+    }
+    if material_states[other_particle.material] == StateOfMatter::Solid {
+        return false;
+    }
+    if grid.get_dirty(other_particle_position) {
+        return false;
+    }
+
+    return (material_densities[particle.material] > material_densities[other_particle.material])
+        || (material_densities[particle.material] == material_densities[other_particle.material]
+            && grid.center_chunk_mut().rng().gen_bool(0.01));
+}
+
 pub fn flow(
-    mut grid: ChunksParam,
+    grid: ChunksParam,
     material_states: Res<MaterialStates>,
     material_densities: Res<MaterialDensities>,
     material_flowing: Res<MaterialFlowing>,
 ) {
-    process_chunks(&mut grid, |chunk_pos, grid| {
+    process_chunks(&grid, |chunk_pos, grid| {
         flow_chunk(
             grid,
             chunk_pos,
@@ -162,19 +179,13 @@ fn flow_chunk(
             }
 
             let mut can_flow_into = |other_particle_position| {
-                let other_particle = *grid.get_particle(other_particle_position);
-                let not_solid = material_states[other_particle.material] != StateOfMatter::Solid;
-                let not_dirty = !grid.get_dirty(other_particle_position);
-                let not_same_material = other_particle.material != particle.material;
-                let less_dense = material_densities[particle.material]
-                    > material_densities[other_particle.material];
-                let same_density_sometimes = material_densities[particle.material]
-                    == material_densities[other_particle.material]
-                    && grid.center_chunk_mut().rng().gen_bool(0.01);
-                not_solid
-                    && not_dirty
-                    && not_same_material
-                    && (less_dense || same_density_sometimes)
+                can_flow_into(
+                    grid,
+                    other_particle_position,
+                    material_states,
+                    particle,
+                    material_densities,
+                )
             };
 
             let particle_left_position = left(particle_position);
@@ -212,4 +223,27 @@ fn flow_chunk(
                 .set(particle.id, other_particle_position - particle_position);
         }
     }
+}
+
+fn can_flow_into(
+    grid: &mut ChunkNeighborhoodView<'_>,
+    other_particle_position: IVec2,
+    material_states: &MaterialStates,
+    particle: crate::particle_grid::Particle,
+    material_densities: &MaterialDensities,
+) -> bool {
+    let other_particle = *grid.get_particle(other_particle_position);
+    if other_particle.material == particle.material {
+        return false;
+    }
+    if material_states[other_particle.material] == StateOfMatter::Solid {
+        return false;
+    }
+    if grid.get_dirty(other_particle_position) {
+        return false;
+    }
+
+    return (material_densities[particle.material] > material_densities[other_particle.material])
+        || (material_densities[particle.material] == material_densities[other_particle.material]
+            && grid.center_chunk_mut().rng().gen_bool(0.01));
 }

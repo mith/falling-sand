@@ -11,7 +11,7 @@ use ndarray::parallel::prelude::{IntoParallelIterator, ParallelIterator};
 use smallvec::SmallVec;
 
 use crate::{
-    chunk::Chunk,
+    chunk::{Chunk, ChunkData},
     falling_sand_grid::{
         ActiveChunks, ChunkNeighborhoodView, ChunkPositions, ChunkPositionsData, CHUNK_SIZE,
     },
@@ -84,5 +84,21 @@ where
 
             operation(center_chunk_pos, &mut grid_view);
         });
+    });
+}
+
+pub fn process_chunks_dense<F>(grid: &ChunksParam, operation: F)
+where
+    F: Fn(IVec2, &mut ChunkData) + Sync,
+{
+    let span = info_span!("process_chunks_dense");
+    let _guard = span.enter();
+    let active_chunks = grid.active_chunks().iter().collect::<Vec<_>>();
+    active_chunks.into_par_iter().for_each(|&chunk_position| {
+        let span = info_span!("process_chunks_dense_task");
+        let _guard = span.enter();
+        let chunk = grid.get_chunk_at(chunk_position);
+        let mut chunk_data = chunk.write().unwrap();
+        operation(chunk_position, &mut chunk_data);
     });
 }

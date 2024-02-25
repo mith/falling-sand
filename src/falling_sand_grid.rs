@@ -205,6 +205,10 @@ impl ActiveChunks {
     pub fn passes(&self) -> &[SmallVec<[IVec2; 8]>; 9] {
         &self.passes
     }
+
+    pub fn iter(&self) -> impl Iterator<Item = &IVec2> {
+        self.chunks.keys()
+    }
 }
 
 pub fn update_active_chunks(

@@ -13,8 +13,8 @@ use crate::{
 
 type ReactionChoices = SmallVec<[(Material, u32); 8]>;
 
-pub fn react(mut grid: ChunksParam, material_reactions: Res<MaterialReactions>) {
-    process_chunks(&mut grid, |chunk_pos, grid| {
+pub fn react(grid: ChunksParam, material_reactions: Res<MaterialReactions>) {
+    process_chunks(&grid, |chunk_pos, grid| {
         let span = info_span!("react_closure");
         let _guard = span.enter();
         let chunk_size = grid.chunk_size();

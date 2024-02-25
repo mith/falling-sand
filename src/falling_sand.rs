@@ -1,4 +1,4 @@
-use std::{borrow::Cow, time::Duration};
+use std::{borrow::Cow, iter, num::NonZeroU32, process::exit, time::Duration};
 
 use bevy::{
     ecs::system::SystemParam,
@@ -6,7 +6,12 @@ use bevy::{
     render::{
         render_asset::RenderAssetUsages,
         render_graph::RenderLabel,
-        render_resource::{AsBindGroup, BindGroupEntries, CachedPipelineState},
+        render_resource::{
+            AsBindGroup, BindGroupEntries, BindGroupLayoutEntry, BindingType, CachedPipelineState,
+            ShaderStages, StorageTextureAccess, TextureViewDimension,
+        },
+        settings::WgpuFeatures,
+        texture::FallbackImage,
         Render,
     },
     utils::{HashMap, HashSet},
@@ -135,6 +140,22 @@ impl Plugin for FallingSandPlugin {
     fn finish(&self, app: &mut App) {
         let render_app = app.sub_app_mut(RenderApp);
         render_app.init_resource::<FallingSandPipeline>();
+
+        let render_device = render_app.world.resource::<RenderDevice>();
+
+        // Check if the device support the required feature. If not, exit the example.
+        // In a real application, you should setup a fallback for the missing feature
+        if !render_device
+            .features()
+            .contains(WgpuFeatures::SAMPLED_TEXTURE_AND_STORAGE_BUFFER_ARRAY_NON_UNIFORM_INDEXING)
+        {
+            error!(
+                "Render device doesn't support feature \
+SAMPLED_TEXTURE_AND_STORAGE_BUFFER_ARRAY_NON_UNIFORM_INDEXING, \
+which is required for texture binding arrays"
+            );
+            exit(1);
+        }
     }
 }
 
@@ -219,17 +240,19 @@ fn deactivate_clean_chunks(
 }
 
 #[derive(Component, Reflect)]
-pub struct FallingSandSprite {
+pub struct ChunkParticleGridImage {
     pub materials_texture: Handle<Image>,
-    pub color_map: Handle<Image>,
+    pub color_texture: Handle<Image>,
 }
 
 fn grid_to_texture(
-    falling_sand: Query<(Entity, &FallingSandSprite, &Chunk)>,
+    falling_sand: Query<(Entity, &ChunkParticleGridImage, &Chunk)>,
     mut textures: ResMut<Assets<Image>>,
     mut initialized_textures: Local<HashSet<Entity>>,
+    mut falling_sand_images: ResMut<FallingSandImages>,
 ) {
-    for (chunk_entity, falling_sand, chunk) in &falling_sand {
+    falling_sand_images.dirty_chunk_grids.clear();
+    for (chunk_entity, particle_grid_image, chunk) in &falling_sand {
         if !chunk.read().unwrap().is_dirty() && initialized_textures.contains(&chunk_entity) {
             continue;
         }
@@ -237,7 +260,7 @@ fn grid_to_texture(
             initialized_textures.insert(chunk_entity);
         }
 
-        if let Some(materials_texture) = textures.get_mut(&falling_sand.materials_texture) {
+        if let Some(materials_texture) = textures.get_mut(&particle_grid_image.materials_texture) {
             let chunk_data = &chunk.read().unwrap();
             let particle_grid = chunk_data.particles();
             let particle_array = particle_grid.array();
@@ -247,6 +270,11 @@ fn grid_to_texture(
                     .expect("Failed to get slice from grid"),
             ));
         }
+
+        falling_sand_images.dirty_chunk_grids.push(ChunkImages {
+            grid_texture: particle_grid_image.materials_texture.clone(),
+            color_texture: particle_grid_image.color_texture.clone(),
+        });
     }
 }
 
@@ -269,15 +297,14 @@ impl Default for FallingSandSettings {
 struct ChunkImages {
     #[storage_texture(0, image_format = Rg32Uint, access = ReadOnly)]
     pub grid_texture: Handle<Image>,
-    #[storage_texture(1, image_format = Rgba8Unorm, access = ReadOnly, dimension = "1d")]
-    pub color_map: Handle<Image>,
     #[storage_texture(2, image_format = Rgba8Unorm, access = WriteOnly)]
     pub color_texture: Handle<Image>,
 }
 
 #[derive(Resource, Clone, ExtractResource, Default, Reflect)]
 struct FallingSandImages {
-    chunk_images: HashMap<IVec2, ChunkImages>,
+    pub color_map: Handle<Image>,
+    dirty_chunk_grids: Vec<ChunkImages>,
 }
 
 #[derive(Resource, Clone, Default, Reflect)]
@@ -287,7 +314,7 @@ struct DirtyChunks(HashSet<IVec2>);
 struct DirtyOrCreatedChunks(HashSet<IVec2>);
 
 #[derive(Resource, Default)]
-struct FallingSandImagesBindGroups(HashMap<IVec2, BindGroup>);
+struct FallingSandImagesBindGroups(Vec<(u32, BindGroup)>);
 
 #[derive(Resource)]
 struct FallingSandPipeline {
@@ -295,38 +322,98 @@ struct FallingSandPipeline {
     render_pipeline: CachedComputePipelineId,
 }
 
+const MAX_TEXTURE_COUNT: usize = 64;
+
 fn prepare_bind_group(
     pipeline: Res<FallingSandPipeline>,
-    gpu_images: Res<RenderAssets<Image>>,
+    image_assets: Res<RenderAssets<Image>>,
     falling_sand_images: Res<FallingSandImages>,
     mut falling_sand_imgages_bind_groups: ResMut<FallingSandImagesBindGroups>,
     render_device: Res<RenderDevice>,
 ) {
-    for (position, images) in falling_sand_images.chunk_images.iter() {
-        let particle_grid = gpu_images.get(&images.grid_texture).unwrap();
-        let color_map = gpu_images.get(&images.color_map).unwrap();
-        let render_target = gpu_images.get(&images.color_texture).unwrap();
+    let color_map_texture = &image_assets
+        .get(falling_sand_images.color_map.clone())
+        .unwrap()
+        .texture_view;
+
+    falling_sand_imgages_bind_groups.0.clear();
+
+    for chunks in &falling_sand_images
+        .dirty_chunk_grids
+        .iter()
+        .chunks(MAX_TEXTURE_COUNT)
+    {
+        let (grid_textures, color_textures): (Vec<_>, Vec<_>) = chunks.fold(
+            (
+                Vec::with_capacity(MAX_TEXTURE_COUNT),
+                Vec::with_capacity(MAX_TEXTURE_COUNT),
+            ),
+            |(mut grid_textures, mut color_textures), images| {
+                grid_textures.push(&*image_assets.get(&images.grid_texture).unwrap().texture_view);
+                color_textures.push(
+                    &*image_assets
+                        .get(&images.color_texture)
+                        .unwrap()
+                        .texture_view,
+                );
+                (grid_textures, color_textures)
+            },
+        );
 
         let bind_group = render_device.create_bind_group(
-            Some(format!("grid_material_bind_group_{}", position).as_str()),
+            "bindless_grid_material_bind_group",
             &pipeline.texture_bind_group_layout,
             &BindGroupEntries::sequential((
-                &particle_grid.texture_view,
-                &color_map.texture_view,
-                &render_target.texture_view,
+                &grid_textures[..],
+                color_map_texture,
+                &color_textures[..],
             )),
         );
 
         falling_sand_imgages_bind_groups
             .0
-            .insert(*position, bind_group);
+            .push((grid_textures.len() as u32, bind_group));
     }
 }
 
 impl FromWorld for FallingSandPipeline {
     fn from_world(world: &mut World) -> Self {
         let render_device = world.resource::<RenderDevice>();
-        let texture_bind_group_layout = ChunkImages::bind_group_layout(render_device);
+        let texture_bind_group_layout = render_device.create_bind_group_layout(
+            "bindless_grid_material_bind_group_layout",
+            &[
+                BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::StorageTexture {
+                        access: StorageTextureAccess::ReadOnly,
+                        format: TextureFormat::Rg32Uint,
+                        view_dimension: TextureViewDimension::D2,
+                    },
+                    count: NonZeroU32::new(MAX_TEXTURE_COUNT as u32),
+                },
+                BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::StorageTexture {
+                        access: StorageTextureAccess::ReadOnly,
+                        format: TextureFormat::Rgba8Unorm,
+                        view_dimension: TextureViewDimension::D1,
+                    },
+                    count: None,
+                },
+                BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::StorageTexture {
+                        access: StorageTextureAccess::WriteOnly,
+                        format: TextureFormat::Rgba8Unorm,
+                        view_dimension: TextureViewDimension::D2,
+                    },
+                    count: NonZeroU32::new(MAX_TEXTURE_COUNT as u32),
+                },
+            ],
+        );
         let shader = world
             .resource::<AssetServer>()
             .load("shaders/grid_to_texture.wgsl");
@@ -394,7 +481,6 @@ impl render_graph::Node for FallingSandNode {
         world: &World,
     ) -> Result<(), render_graph::NodeRunError> {
         let texture_bind_group = &world.resource::<FallingSandImagesBindGroups>().0;
-        let dirty_chunks = world.resource::<DirtyOrCreatedChunks>();
         let pipeline_cache = world.resource::<PipelineCache>();
         let pipeline = world.resource::<FallingSandPipeline>();
 
@@ -403,12 +489,9 @@ impl render_graph::Node for FallingSandNode {
             FallingSandState::Render => {
                 let span = info_span!("dispatch_render_chunks");
                 let _guard = span.enter();
-                for (position, bind_group) in texture_bind_group.iter() {
+                for (group_size, bind_group) in texture_bind_group.iter() {
                     let span = info_span!("dispatch_render_chunk");
                     let _guard = span.enter();
-                    if !dirty_chunks.0.contains(position) {
-                        continue;
-                    }
                     let mut pass = render_context
                         .command_encoder()
                         .begin_compute_pass(&ComputePassDescriptor::default());
@@ -422,7 +505,11 @@ impl render_graph::Node for FallingSandNode {
 
                     let size = (self.size.0 as u32, self.size.1 as u32);
                     let workgroup_size = 8;
-                    pass.dispatch_workgroups(size.0 / workgroup_size, size.1 / workgroup_size, 1);
+                    pass.dispatch_workgroups(
+                        size.0 / workgroup_size,
+                        size.1 / workgroup_size,
+                        *group_size,
+                    );
                 }
             }
         }
@@ -498,6 +585,9 @@ impl<'w, 's> ChunkCreationParams<'w, 's> {
 }
 
 fn setup(mut chunk_creation_params: ChunkCreationParams) {
+    let color_map_image = create_color_map_image(&chunk_creation_params.material_colors);
+    chunk_creation_params.falling_sand_images.color_map =
+        chunk_creation_params.images.add(color_map_image);
     let radius = 10;
     let chunk_positions = (-radius..=radius)
         .cartesian_product(-radius..=radius)
@@ -527,17 +617,7 @@ fn create_chunk(
     let material = Material::Air;
     let chunk = Chunk::new_with_material((size.0 as usize, size.1 as usize), material, rng);
 
-    let (grid_texture, color_map_image, color_image) =
-        create_chunk_images(size, &chunk.read().unwrap(), material_colors, images);
-
-    falling_sand_images.chunk_images.insert(
-        IVec2::new(x, y),
-        ChunkImages {
-            grid_texture: grid_texture.clone(),
-            color_map: color_map_image.clone(),
-            color_texture: color_image.clone(),
-        },
-    );
+    let (grid_texture, color_image) = create_chunk_images(size, &chunk.read().unwrap(), images);
 
     (
         Name::new("Chunk"),
@@ -546,7 +626,7 @@ fn create_chunk(
                 custom_size: Some(Vec2::new((size.0 * scale) as f32, (size.1 * scale) as f32)),
                 ..default()
             },
-            texture: color_image,
+            texture: color_image.clone(),
             transform: Transform::from_rotation(Quat::from_rotation_z(std::f32::consts::PI / 2.0))
                 .with_translation(Vec3::new(
                     (x * size.0 as i32 * scale as i32) as f32,
@@ -555,9 +635,9 @@ fn create_chunk(
                 )),
             ..default()
         },
-        FallingSandSprite {
+        ChunkParticleGridImage {
             materials_texture: grid_texture,
-            color_map: color_map_image,
+            color_texture: color_image,
         },
         chunk,
         ChunkPosition(IVec2::new(x, y)),
@@ -567,9 +647,8 @@ fn create_chunk(
 fn create_chunk_images(
     size: (u32, u32),
     falling_sand_grid: &ChunkData,
-    material_colors: &MaterialColor,
     images: &mut Assets<Image>,
-) -> (Handle<Image>, Handle<Image>, Handle<Image>) {
+) -> (Handle<Image>, Handle<Image>) {
     // Create the particle grid texture
     let mut grid_image = Image::new_fill(
         Extent3d {
@@ -590,6 +669,28 @@ fn create_chunk_images(
         falling_sand_grid.particles().array().as_slice().unwrap(),
     ));
 
+    // Create the render target texture
+    let mut render_target = Image::new_fill(
+        Extent3d {
+            width: size.0,
+            height: size.1,
+            depth_or_array_layers: 1,
+        },
+        TextureDimension::D2,
+        &[0, 0, 0, 255],
+        TextureFormat::Rgba8Unorm,
+        RenderAssetUsages::RENDER_WORLD,
+    );
+    render_target.texture_descriptor.usage =
+        TextureUsages::STORAGE_BINDING | TextureUsages::TEXTURE_BINDING;
+
+    // Add the textures to the asset server and get the handles
+    let grid_texture = images.add(grid_image);
+    let color_image = images.add(render_target);
+    (grid_texture, color_image)
+}
+
+fn create_color_map_image(material_colors: &MaterialColor) -> Image {
     let material_colors_vec = MaterialIterator::new()
         .map(|m| material_colors.0[m])
         .flat_map(|c| [c[0], c[1], c[2], 255u8])
@@ -609,25 +710,5 @@ fn create_chunk_images(
     color_map_image.texture_descriptor.usage =
         TextureUsages::STORAGE_BINDING | TextureUsages::TEXTURE_BINDING;
     color_map_image.texture_descriptor.label = Some("color_map_texture");
-
-    // Create the render target texture
-    let mut render_target = Image::new_fill(
-        Extent3d {
-            width: size.0,
-            height: size.1,
-            depth_or_array_layers: 1,
-        },
-        TextureDimension::D2,
-        &[0, 0, 0, 255],
-        TextureFormat::Rgba8Unorm,
-        RenderAssetUsages::RENDER_WORLD,
-    );
-    render_target.texture_descriptor.usage =
-        TextureUsages::STORAGE_BINDING | TextureUsages::TEXTURE_BINDING;
-
-    // Add the textures to the asset server and get the handles
-    let grid_texture = images.add(grid_image);
-    let color_map_image = images.add(color_map_image);
-    let color_image = images.add(render_target);
-    (grid_texture, color_map_image, color_image)
+    color_map_image
 }
