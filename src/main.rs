@@ -22,7 +22,6 @@ mod pan_zoom_camera;
 mod particle_grid;
 mod process_chunks;
 mod reactions;
-mod sparse_grid_iterator;
 mod time_control;
 mod util;
 

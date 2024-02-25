@@ -401,7 +401,11 @@ impl render_graph::Node for FallingSandNode {
         match self.state {
             FallingSandState::Loading => {}
             FallingSandState::Render => {
+                let span = info_span!("dispatch_render_chunks");
+                let _guard = span.enter();
                 for (position, bind_group) in texture_bind_group.iter() {
+                    let span = info_span!("dispatch_render_chunk");
+                    let _guard = span.enter();
                     if !dirty_chunks.0.contains(position) {
                         continue;
                     }

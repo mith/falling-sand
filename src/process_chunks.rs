@@ -1,23 +1,24 @@
 use bevy::{
     ecs::{
         entity::Entity,
-        system::{Query, Res, SystemParam},
+        system::{Res, SystemParam},
     },
+    log::info_span,
     math::IVec2,
-    utils::HashSet,
+    utils::{tracing::span, HashMap},
 };
 use ndarray::parallel::prelude::{IntoParallelIterator, ParallelIterator};
+use smallvec::SmallVec;
 
 use crate::{
     chunk::Chunk,
     falling_sand_grid::{
         ActiveChunks, ChunkNeighborhoodView, ChunkPositions, ChunkPositionsData, CHUNK_SIZE,
     },
-    sparse_grid_iterator::SparseGridIterator,
     util::chunk_neighbors,
 };
 
-const PROCESSING_LIMIT: i32 = 10;
+pub const PROCESSING_LIMIT: i32 = 10;
 
 #[derive(SystemParam)]
 pub struct ChunksParam<'w> {
@@ -27,8 +28,8 @@ pub struct ChunksParam<'w> {
 }
 
 impl ChunksParam<'_> {
-    pub fn active_chunks(&self) -> &HashSet<IVec2> {
-        self.active_chunks.hash_set()
+    pub fn active_chunks(&self) -> &ActiveChunks {
+        &self.active_chunks
     }
 
     pub fn get_chunk_entity_at(&self, chunk_position: IVec2) -> Option<Entity> {
@@ -54,20 +55,18 @@ impl ChunksParam<'_> {
     }
 }
 
-pub fn process_chunks<F>(grid: &mut ChunksParam, operation: F)
+pub fn process_chunks<F>(grid: &ChunksParam, operation: F)
 where
     F: Fn(IVec2, &mut ChunkNeighborhoodView) + Sync,
 {
-    let sparse_iterator = SparseGridIterator::new(
-        grid.active_chunks()
-            .iter()
-            .filter(|pos| pos.x.abs() < PROCESSING_LIMIT && pos.y.abs() < PROCESSING_LIMIT)
-            .copied()
-            .collect(),
-    );
-
-    sparse_iterator.for_each(|chunk_set| {
+    let span = info_span!("process_chunks");
+    let _guard = span.enter();
+    grid.active_chunks().passes().iter().for_each(|chunk_set| {
+        let span = info_span!("process_chunks_pass");
+        let _guard = span.enter();
         chunk_set.into_par_iter().for_each(|&center_chunk_pos| {
+            let span = info_span!("process_chunks_task");
+            let _guard = span.enter();
             let neighbors_positions = chunk_neighbors(center_chunk_pos);
 
             let neighbor_chunks = neighbors_positions

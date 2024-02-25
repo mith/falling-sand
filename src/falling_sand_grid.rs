@@ -1,11 +1,11 @@
 use std::{
+    mem::MaybeUninit,
     ops::{Deref, DerefMut},
     sync::{Arc, RwLock, RwLockWriteGuard},
 };
 
-use ndarray::{s, Array2};
+use ndarray::{s, Array2, ArrayView2, ArrayViewMut2, AssignElem};
 use paste::paste;
-use quadtree_rs::{area::AreaBuilder, Quadtree};
 
 use bevy::{
     ecs::{
@@ -14,8 +14,8 @@ use bevy::{
         query::{Added, With},
         system::{Commands, Query, Res, ResMut, Resource, SystemParam},
     },
-    math::{IVec2, Vec2},
-    utils::{hashbrown::HashMap, HashSet},
+    math::IVec2,
+    utils::{HashMap, HashSet},
 };
 use smallvec::SmallVec;
 
@@ -23,6 +23,7 @@ use crate::{
     chunk::{Chunk, ChunkData},
     material::Material,
     particle_grid::{Particle, ParticleAttributeStore},
+    process_chunks::PROCESSING_LIMIT,
     util::positive_mod,
 };
 
@@ -31,6 +32,7 @@ pub const CHUNK_SIZE: i32 = 64;
 pub const CHUNK_LENGTH: usize = (CHUNK_SIZE * CHUNK_SIZE) as usize;
 
 #[derive(Component)]
+#[component(storage = "SparseSet")]
 pub struct ChunkActive;
 
 #[derive(Component)]
@@ -47,6 +49,12 @@ pub fn tile_pos_to_chunk_pos(IVec2 { x, y }: IVec2) -> IVec2 {
     IVec2::new(floor_div(x, CHUNK_SIZE), floor_div(y, CHUNK_SIZE))
 }
 
+fn chunk_pos_set_index(pos: &IVec2) -> i32 {
+    let positive_mod = |n: i32, m: i32| ((n % m) + m) % m;
+    let x = positive_mod(pos.x, 3);
+    let y = positive_mod(pos.y, 3);
+    x + y * 3
+}
 #[derive(Resource)]
 pub struct ChunkPositions {
     positions: Array2<Option<Entity>>,
@@ -180,15 +188,22 @@ pub fn update_chunk_positions_data(
 }
 
 #[derive(Resource, Default)]
-pub struct ActiveChunks(HashSet<IVec2>);
+pub struct ActiveChunks {
+    chunks: HashMap<IVec2, u8>,
+    passes: [SmallVec<[IVec2; 8]>; 9],
+}
 
 impl ActiveChunks {
     pub fn contains(&self, pos: &IVec2) -> bool {
-        self.0.contains(pos)
+        self.chunks.contains_key(pos)
     }
 
-    pub fn hash_set(&self) -> &HashSet<IVec2> {
-        &self.0
+    pub fn hash_map(&self) -> &HashMap<IVec2, u8> {
+        &self.chunks
+    }
+
+    pub fn passes(&self) -> &[SmallVec<[IVec2; 8]>; 9] {
+        &self.passes
     }
 }
 
@@ -196,10 +211,26 @@ pub fn update_active_chunks(
     mut active_chunks: ResMut<ActiveChunks>,
     active_chunks_query: Query<(&ChunkActive, &ChunkPosition)>,
 ) {
-    active_chunks.0.clear();
-    active_chunks
-        .0
-        .extend(active_chunks_query.iter().map(|(_, pos)| pos.0));
+    active_chunks.chunks.clear();
+    active_chunks.chunks.extend(
+        active_chunks_query
+            .iter()
+            .map(|(_, pos)| (pos.0, chunk_pos_set_index(&pos.0) as u8)),
+    );
+
+    let ActiveChunks {
+        ref mut passes,
+        ref chunks,
+    } = *active_chunks;
+    for pass in passes.iter_mut() {
+        pass.clear();
+    }
+    for (chunk_pos, &set_index) in chunks.iter() {
+        if chunk_pos.x.abs() > PROCESSING_LIMIT || chunk_pos.y.abs() > PROCESSING_LIMIT {
+            continue;
+        }
+        passes[set_index as usize].push(*chunk_pos);
+    }
 }
 
 #[derive(SystemParam)]
@@ -359,7 +390,7 @@ macro_rules! define_attributes_and_swap {
             )*
         }
 
-        impl<'w> ChunkNeighborhoodView<'w> {
+        impl<'a> ChunkNeighborhoodView<'a> {
             pub fn swap_particles(&mut self, a: IVec2, b: IVec2) {
                 let chunk_a_pos = tile_pos_to_chunk_pos(a);
                 let chunk_b_pos = tile_pos_to_chunk_pos(b);
@@ -431,26 +462,58 @@ define_attributes_and_swap! {
 }
 
 pub struct ChunkNeighborhoodView<'a> {
-    chunk_refs: SmallVec<[(IVec2, RwLockWriteGuard<'a, ChunkData>); 9]>,
+    center_chunk_position: IVec2,
+    chunks: [(IVec2, RwLockWriteGuard<'a, ChunkData>); 9],
 }
 
-impl ChunkNeighborhoodView<'_> {
-    pub fn new<'a>(
+impl<'a> ChunkNeighborhoodView<'a> {
+    pub fn new(
         center_chunk: (IVec2, &'a Chunk),
         neighbors: impl Iterator<Item = (IVec2, &'a Chunk)>,
     ) -> ChunkNeighborhoodView<'a> {
-        let mut chunk_refs =
-            SmallVec::from_iter(neighbors.map(|(pos, chunk)| (pos, chunk.write().unwrap())));
-        chunk_refs.push((center_chunk.0, center_chunk.1.write().unwrap()));
-        ChunkNeighborhoodView { chunk_refs }
+        let chunks = {
+            const ARRAY_REPEAT_VALUE: MaybeUninit<(
+                bevy::prelude::IVec2,
+                std::sync::RwLockWriteGuard<'_, ChunkData>,
+            )> = MaybeUninit::uninit();
+
+            let mut chunks_uninit: [MaybeUninit<(IVec2, RwLockWriteGuard<'a, ChunkData>)>; 9] =
+                [ARRAY_REPEAT_VALUE; 9];
+
+            for (pos, chunk) in std::iter::once(center_chunk).chain(neighbors) {
+                let index = ((pos.x - center_chunk.0.x), (pos.y - center_chunk.0.y));
+                let index = Self::local_pos_to_index(index.into());
+                chunks_uninit[index].write((pos, chunk.write().unwrap()));
+            }
+
+            unsafe { chunks_uninit.map(|p| p.assume_init()) }
+        };
+
+        let center_chunk_position = center_chunk.0;
+        ChunkNeighborhoodView {
+            chunks,
+            center_chunk_position,
+        }
+    }
+
+    fn local_pos_to_index(pos: IVec2) -> usize {
+        (pos.x + 1 + (pos.y + 1) * 3) as usize
+    }
+
+    fn global_to_local_pos(&self, pos: IVec2) -> IVec2 {
+        pos - self.center_chunk_position
+    }
+
+    fn global_pos_to_index(&self, pos: IVec2) -> usize {
+        Self::local_pos_to_index(self.global_to_local_pos(pos))
     }
 
     pub fn center_chunk(&self) -> &ChunkData {
-        self.chunk_refs.last().unwrap().1.deref()
+        self.chunks[4].1.deref()
     }
 
     pub fn center_chunk_mut(&mut self) -> &mut ChunkData {
-        self.chunk_refs.last_mut().unwrap().1.deref_mut()
+        self.chunks[4].1.deref_mut()
     }
 
     pub fn chunk_size(&self) -> IVec2 {
@@ -459,18 +522,15 @@ impl ChunkNeighborhoodView<'_> {
 
     pub fn get_chunk_at_pos(&self, position: IVec2) -> Option<&ChunkData> {
         let chunk_pos = tile_pos_to_chunk_pos(position);
-        self.chunk_refs
-            .iter()
-            .find(|(pos, _)| *pos == chunk_pos)
+        self.chunks
+            .get(self.global_pos_to_index(chunk_pos))
             .map(|(_, chunk)| chunk.deref())
     }
 
     pub fn get_chunk_at_pos_mut(&mut self, position: IVec2) -> Option<&mut ChunkData> {
         let chunk_pos = tile_pos_to_chunk_pos(position);
-        self.chunk_refs
-            .iter_mut()
-            .find(|(pos, _)| *pos == chunk_pos)
-            .map(|(_, chunk)| chunk.deref_mut())
+        let index = self.global_pos_to_index(chunk_pos);
+        self.chunks.get_mut(index).map(|chunk| chunk.1.deref_mut())
     }
 
     pub fn get_two_chunks_mut(
@@ -482,9 +542,9 @@ impl ChunkNeighborhoodView<'_> {
             return None; // Early return if positions are the same, as we can't borrow mutably twice.
         }
 
-        let mut first_index = self.chunk_refs.iter().position(|(pos, _)| *pos == pos_a)?;
+        let mut first_index = self.chunks.iter().position(|(pos, _)| *pos == pos_a)?;
 
-        let mut second_index = self.chunk_refs.iter().position(|(pos, _)| *pos == pos_b)?;
+        let mut second_index = self.chunks.iter().position(|(pos, _)| *pos == pos_b)?;
 
         let mut flipped = false;
 
@@ -493,7 +553,7 @@ impl ChunkNeighborhoodView<'_> {
             flipped = true;
         }
 
-        let (first_half, second_half) = self.chunk_refs.split_at_mut(second_index);
+        let (first_half, second_half) = self.chunks.split_at_mut(second_index);
         let chunk_a = &mut first_half[first_index].1;
         let chunk_b = &mut second_half[0].1;
 
@@ -545,8 +605,12 @@ impl ChunkNeighborhoodView<'_> {
 
 #[cfg(test)]
 mod test {
-    use bevy::app::{App, Update};
-    use rand::{rngs::StdRng, SeedableRng};
+    use bevy::{
+        app::{App, Update},
+        utils::default,
+    };
+
+    use crate::chunk;
 
     use super::*;
 
@@ -557,12 +621,6 @@ mod test {
         assert_eq!(tile_pos_to_chunk_pos((64, 64).into()), IVec2::new(1, 1));
         assert_eq!(tile_pos_to_chunk_pos((65, 65).into()), IVec2::new(1, 1));
         assert_eq!(tile_pos_to_chunk_pos((0, -1).into()), IVec2::new(0, -1));
-    }
-
-    #[test]
-    fn test_chunk_neighorhood_view_get_chunk_at_pos() {
-        let rng = StdRng::seed_from_u64(0);
-        let mut chunk = Chunk::new((CHUNK_SIZE as usize, CHUNK_SIZE as usize), rng);
     }
 
     #[test]
