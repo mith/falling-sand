@@ -5,20 +5,15 @@ use bevy::{
     },
     log::info_span,
     math::IVec2,
-    utils::{tracing::span, HashMap},
 };
 use ndarray::{
     parallel::prelude::{IntoParallelIterator, ParallelIterator},
     Array2,
 };
-use smallvec::SmallVec;
 
 use crate::{
     chunk::{Chunk, ChunkData},
-    falling_sand_grid::{
-        ActiveChunks, ChunkNeighborhoodView, ChunkPositions, ChunkPositionsData, CHUNK_SIZE,
-    },
-    util::chunk_neighbors,
+    falling_sand_grid::{ActiveChunks, ChunkNeighborhoodView, ChunkPositions, ChunkPositionsData},
 };
 
 pub const PROCESSING_LIMIT: i32 = 100;
@@ -39,18 +34,10 @@ impl ChunksParam<'_> {
         self.chunk_positions.get_chunk_at(chunk_position)
     }
 
-    pub fn chunk_size(&self) -> IVec2 {
-        IVec2::new(CHUNK_SIZE, CHUNK_SIZE)
-    }
-
     pub fn get_chunk_at(&self, chunk_position: IVec2) -> &Chunk {
         self.chunk_positions_data
             .get_chunk_at(chunk_position)
             .unwrap()
-    }
-
-    pub fn get_chunks_at<const N: usize>(&self, chunk_positions: &[IVec2; N]) -> [&Chunk; N] {
-        chunk_positions.map(|pos| self.chunk_positions_data.get_chunk_at(pos).unwrap())
     }
 
     pub fn get_neighborhood(&self, chunk_position: IVec2) -> Array2<&Chunk> {

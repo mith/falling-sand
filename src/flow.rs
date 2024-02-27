@@ -6,7 +6,7 @@ use crate::{
     falling_sand_grid::ChunkNeighborhoodView,
     material::{MaterialDensities, MaterialFlowing, MaterialStates, StateOfMatter},
     process_chunks::{process_chunks, ChunksParam},
-    util::{below, below_left, below_right, left, random_dir_range, right},
+    util::{below, left, random_dir_range, right},
 };
 pub fn flow(
     grid: ChunksParam,
@@ -14,10 +14,9 @@ pub fn flow(
     material_densities: Res<MaterialDensities>,
     material_flowing: Res<MaterialFlowing>,
 ) {
-    process_chunks(&grid, |chunk_pos, grid| {
+    process_chunks(&grid, |_chunk_pos, grid| {
         flow_chunk(
             grid,
-            chunk_pos,
             &material_flowing,
             &material_densities,
             &material_states,
@@ -27,7 +26,6 @@ pub fn flow(
 
 fn flow_chunk(
     grid: &mut ChunkNeighborhoodView,
-    chunk_pos: IVec2,
     material_flowing: &MaterialFlowing,
     material_densities: &MaterialDensities,
     material_states: &MaterialStates,

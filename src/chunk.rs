@@ -17,10 +17,6 @@ use crate::{
 pub struct Chunk(pub Arc<RwLock<ChunkData>>);
 
 impl Chunk {
-    pub fn new(size: (usize, usize), rng: StdRng) -> Chunk {
-        Chunk(Arc::new(RwLock::new(ChunkData::new(size, rng))))
-    }
-
     pub fn new_with_material(size: (usize, usize), material: Material, rng: StdRng) -> Chunk {
         Chunk(Arc::new(RwLock::new(ChunkData::new_with_material(
             size, material, rng,
@@ -37,10 +33,6 @@ pub struct ChunkData {
 }
 
 impl ChunkData {
-    fn new(size: (usize, usize), rng: StdRng) -> ChunkData {
-        ChunkData::new_with_material(size, Material::Air, rng)
-    }
-
     fn new_with_material(size: (usize, usize), material: Material, rng: StdRng) -> ChunkData {
         let particle_grid = ParticleGrid::new(size, material);
         let size = particle_grid.array().len();

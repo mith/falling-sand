@@ -9,7 +9,7 @@ use crate::{
 pub fn fire_to_smoke(grid: ChunksParam) {
     process_chunks_dense(&grid, |chunk_pos, chunk| {
         let _ = chunk_pos;
-        let span = info_span!("fire_to_smoke");
+        let span = info_span!("fire_to_smoke_task");
         let _guard = span.enter();
         let chunk_size = chunk.size();
         let max_y = chunk_size.y;

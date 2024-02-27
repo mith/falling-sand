@@ -3,26 +3,24 @@ use rand::Rng;
 use bevy::{ecs::system::Res, log::info_span, math::IVec2};
 
 use crate::{
-    chunk,
     falling_sand_grid::ChunkNeighborhoodView,
-    material::{MaterialDensities, MaterialFlowing, MaterialStates, StateOfMatter},
+    material::{MaterialDensities, MaterialStates, StateOfMatter},
     process_chunks::{process_chunks, ChunksParam},
     util::{below, below_left, below_right, left, random_dir_range, right},
 };
 
 pub fn fall(
-    mut grid: ChunksParam,
+    grid: ChunksParam,
     material_states: Res<MaterialStates>,
     material_densities: Res<MaterialDensities>,
 ) {
-    process_chunks(&mut grid, |chunk_pos, grid| {
-        fall_chunk(grid, chunk_pos, &material_states, &material_densities)
+    process_chunks(&grid, |_chunk_pos, grid| {
+        fall_chunk(grid, &material_states, &material_densities)
     });
 }
 
 fn fall_chunk(
     grid: &mut ChunkNeighborhoodView,
-    chunk_pos: IVec2,
     material_states: &MaterialStates,
     material_densities: &MaterialDensities,
 ) {

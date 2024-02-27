@@ -70,20 +70,6 @@ pub fn chunk_neighbors_n(chunk_position: IVec2, n: i32) -> Vec<IVec2> {
     neighbors
 }
 
-pub fn chunk_pos_with_neighbor_positions(chunk_pos: IVec2) -> [IVec2; 9] {
-    [
-        chunk_pos,
-        IVec2::new(chunk_pos.x - 1, chunk_pos.y - 1),
-        IVec2::new(chunk_pos.x, chunk_pos.y - 1),
-        IVec2::new(chunk_pos.x + 1, chunk_pos.y - 1),
-        IVec2::new(chunk_pos.x - 1, chunk_pos.y),
-        IVec2::new(chunk_pos.x + 1, chunk_pos.y),
-        IVec2::new(chunk_pos.x - 1, chunk_pos.y + 1),
-        IVec2::new(chunk_pos.x, chunk_pos.y + 1),
-        IVec2::new(chunk_pos.x + 1, chunk_pos.y + 1),
-    ]
-}
-
 #[cfg(test)]
 mod test {
     use rand::SeedableRng;

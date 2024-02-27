@@ -152,6 +152,7 @@
               nil
               rr
               gdb
+              tracy
             ]
             ++ nativeBuildInputs;
         };

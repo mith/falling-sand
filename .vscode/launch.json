@@ -54,10 +54,6 @@
         },
         {
             "type": "midas-rr",
-            "request": "launch",
-        }
-        {
-            "type": "midas-rr",
             "request": "attach",
             "name": "Launch replay debug session",
             "cwd": "${workspaceFolder}",

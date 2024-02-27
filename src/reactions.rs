@@ -1,7 +1,4 @@
-use bevy::{
-    ecs::system::{Res, ResMut},
-    log::info_span,
-};
+use bevy::{ecs::system::Res, log::info_span};
 use rand::seq::SliceRandom;
 use smallvec::SmallVec;
 
@@ -14,7 +11,7 @@ use crate::{
 type ReactionChoices = SmallVec<[(Material, u32); 8]>;
 
 pub fn react(grid: ChunksParam, material_reactions: Res<MaterialReactions>) {
-    process_chunks(&grid, |chunk_pos, grid| {
+    process_chunks(&grid, |_chunk_pos, grid| {
         let span = info_span!("react_closure");
         let _guard = span.enter();
         let chunk_size = grid.chunk_size();

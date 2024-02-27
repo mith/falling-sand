@@ -1,4 +1,4 @@
-use std::{borrow::Cow, iter, num::NonZeroU32, process::exit, time::Duration};
+use std::{borrow::Cow, num::NonZeroU32, process::exit, time::Duration};
 
 use bevy::{
     ecs::system::SystemParam,
@@ -11,10 +11,9 @@ use bevy::{
             ShaderStages, StorageTextureAccess, TextureViewDimension,
         },
         settings::WgpuFeatures,
-        texture::FallbackImage,
         Render,
     },
-    utils::{HashMap, HashSet},
+    utils::HashSet,
 };
 
 use bevy::render::extract_resource::{ExtractResource, ExtractResourcePlugin};
@@ -547,48 +546,29 @@ fn draw_debug_gizmos(
 pub struct ChunkCreationParams<'w, 's> {
     commands: Commands<'w, 's>,
     images: ResMut<'w, Assets<Image>>,
-    falling_sand_images: ResMut<'w, FallingSandImages>,
     falling_sand_settings: Res<'w, FallingSandSettings>,
-    material_colors: Res<'w, MaterialColor>,
 }
 
 impl<'w, 's> ChunkCreationParams<'w, 's> {
-    pub fn spawn_chunk(&mut self, position: IVec2, active: bool) {
-        let mut chunk = self.commands.spawn(create_chunk(
-            &mut self.images,
-            &mut self.falling_sand_images,
-            &self.falling_sand_settings,
-            &self.material_colors,
-            position,
-        ));
-
-        if active {
-            chunk.insert(ChunkActive);
-        }
-    }
-
     pub fn spawn_chunks(&mut self, positions: impl IntoIterator<Item = IVec2>) {
         self.commands.spawn_batch(
             positions
                 .into_iter()
                 .map(|position| {
-                    create_chunk(
-                        &mut self.images,
-                        &mut self.falling_sand_images,
-                        &self.falling_sand_settings,
-                        &self.material_colors,
-                        position,
-                    )
+                    create_chunk(&mut self.images, &self.falling_sand_settings, position)
                 })
                 .collect_vec(),
         );
     }
 }
 
-fn setup(mut chunk_creation_params: ChunkCreationParams) {
-    let color_map_image = create_color_map_image(&chunk_creation_params.material_colors);
-    chunk_creation_params.falling_sand_images.color_map =
-        chunk_creation_params.images.add(color_map_image);
+fn setup(
+    mut chunk_creation_params: ChunkCreationParams,
+    material_colors: Res<MaterialColor>,
+    mut falling_sand_images: ResMut<FallingSandImages>,
+) {
+    let color_map_image = create_color_map_image(&material_colors);
+    falling_sand_images.color_map = chunk_creation_params.images.add(color_map_image);
     let radius = 10;
     let chunk_positions = (-radius..=radius)
         .cartesian_product(-radius..=radius)
@@ -598,9 +578,7 @@ fn setup(mut chunk_creation_params: ChunkCreationParams) {
 
 fn create_chunk(
     images: &mut Assets<Image>,
-    falling_sand_images: &mut FallingSandImages,
     falling_sand_settings: &FallingSandSettings,
-    material_colors: &MaterialColor,
     position: IVec2,
 ) -> impl Bundle {
     let IVec2 { x, y } = position;
