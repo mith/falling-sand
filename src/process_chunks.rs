@@ -78,20 +78,9 @@ where
         chunk_set.into_par_iter().for_each(|&center_chunk_pos| {
             let span = info_span!("process_chunks_task");
             let _guard = span.enter();
-            let neighbors_positions = chunk_neighbors(center_chunk_pos);
+            let neighborhood = grid.get_neighborhood(center_chunk_pos);
 
-            let neighbor_chunks = neighbors_positions
-                .iter()
-                .map(|pos| grid.get_chunk_at(*pos));
-
-            let neighbors = neighbors_positions
-                .iter()
-                .zip(neighbor_chunks)
-                .map(|(pos, chunk)| (*pos, chunk));
-
-            let center_chunk = (center_chunk_pos, grid.get_chunk_at(center_chunk_pos));
-
-            let mut grid_view = ChunkNeighborhoodView::new(center_chunk, neighbors);
+            let mut grid_view = ChunkNeighborhoodView::new(neighborhood.as_slice().unwrap());
 
             operation(center_chunk_pos, &mut grid_view);
         });

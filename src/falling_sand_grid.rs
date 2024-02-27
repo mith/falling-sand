@@ -28,9 +28,8 @@ use crate::{
     util::positive_mod,
 };
 
-pub const CHUNK_SIZE: i32 = 64;
-
-pub const CHUNK_LENGTH: usize = (CHUNK_SIZE * CHUNK_SIZE) as usize;
+const SHIFT: i32 = 6; // log2(CHUNK_SIZE)
+pub const CHUNK_SIZE: i32 = 1 << SHIFT;
 
 #[derive(Component)]
 #[component(storage = "SparseSet")]
@@ -463,10 +462,9 @@ pub struct ChunkNeighborhoodView<'a> {
 }
 
 impl<'a> ChunkNeighborhoodView<'a> {
-    pub fn new(
-        center_chunk: (IVec2, &'a Chunk),
-        neighbors: impl Iterator<Item = (IVec2, &'a Chunk)>,
-    ) -> ChunkNeighborhoodView<'a> {
+    pub fn new(chunks: &'a [&Chunk]) -> ChunkNeighborhoodView<'a> {
+        debug_assert_eq!(chunks.len(), 9, "Chunks must be of length 9");
+
         let chunks = {
             const ARRAY_REPEAT_VALUE: MaybeUninit<std::sync::RwLockWriteGuard<'_, ChunkData>> =
                 MaybeUninit::uninit();
@@ -474,13 +472,9 @@ impl<'a> ChunkNeighborhoodView<'a> {
             let mut chunks_uninit: [MaybeUninit<RwLockWriteGuard<'a, ChunkData>>; 9] =
                 [ARRAY_REPEAT_VALUE; 9];
 
-            for (pos, chunk) in std::iter::once(center_chunk).chain(neighbors) {
-                let index = (
-                    (pos.x + 1 - center_chunk.0.x),
-                    (pos.y + 1 - center_chunk.0.y),
-                );
-                let index = chunk_pos_to_index(index.into());
-                chunks_uninit[index].write(chunk.write().unwrap());
+            for (i, chunk) in chunks.iter().enumerate() {
+                let chunk = chunk.write().unwrap();
+                chunks_uninit[i] = MaybeUninit::new(chunk);
             }
 
             unsafe { chunks_uninit.map(|p| p.assume_init()) }
@@ -576,8 +570,6 @@ impl<'a> ChunkNeighborhoodView<'a> {
     }
 }
 
-const SHIFT: i32 = 6; // log2(CHUNK_SIZE)
-                      //
 fn neighborhood_pos_to_chunk_pos(position: IVec2) -> IVec2 {
     let chunk_x = position.x >> SHIFT;
     let chunk_y = position.y >> SHIFT;
