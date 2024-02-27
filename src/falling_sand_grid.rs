@@ -2,9 +2,10 @@ use std::{
     mem::MaybeUninit,
     ops::{Deref, DerefMut},
     sync::{Arc, RwLock, RwLockWriteGuard},
+    thread::panicking,
 };
 
-use ndarray::{s, Array2, ArrayView2, ArrayViewMut2, AssignElem};
+use ndarray::{s, Array2, ArrayView2, ArrayViewMut2, AssignElem, MathCell};
 use paste::paste;
 
 use bevy::{
@@ -396,20 +397,20 @@ macro_rules! define_attributes_and_swap {
 
         impl<'a> ChunkNeighborhoodView<'a> {
             pub fn swap_particles(&mut self, a: IVec2, b: IVec2) {
-                let chunk_a_pos = tile_pos_to_chunk_pos(a);
-                let chunk_b_pos = tile_pos_to_chunk_pos(b);
+                let chunk_a_pos = neighborhood_pos_to_chunk_pos(a);
+                let chunk_b_pos = neighborhood_pos_to_chunk_pos(b);
 
-                let particle_pos_a = IVec2::new(positive_mod(a.x, CHUNK_SIZE), positive_mod(a.y, CHUNK_SIZE));
-                let particle_pos_b = IVec2::new(positive_mod(b.x, CHUNK_SIZE), positive_mod(b.y, CHUNK_SIZE));
+                let particle_pos_a = neighborhood_pos_to_local_pos(a, chunk_a_pos);
+                let particle_pos_b = neighborhood_pos_to_local_pos(b, chunk_b_pos);
 
                 if chunk_a_pos == chunk_b_pos {
-                    let chunk = self.get_chunk_at_pos_mut(a).unwrap();
+                    let chunk = self.get_chunk_at_chunk_pos_mut(chunk_a_pos).unwrap();
                     chunk.swap_particles(
                         particle_pos_a.into(),
                         particle_pos_b.into()
                     );
                 } else {
-                    let (chunk_a, chunk_b) = self.get_two_chunks_mut(chunk_a_pos, chunk_b_pos).unwrap();
+                    let (chunk_a, chunk_b) = self.get_two_chunks_mut(chunk_a_pos, chunk_b_pos);
 
                     let particle_a_id = chunk_a.get_particle(particle_pos_a).unwrap().id;
                     let particle_b_id = chunk_b.get_particle(particle_pos_b).unwrap().id;
@@ -434,24 +435,16 @@ macro_rules! define_attributes_and_swap {
             $(
                 paste! {
                     pub fn [<get_ $attr>](&self, position: IVec2) -> $type {
-                        let chunk = self.get_chunk_at_pos(position).unwrap();
-                        let particle = chunk.get_particle(
-                                (
-                                    positive_mod(position.x, CHUNK_SIZE),
-                                    positive_mod(position.y, CHUNK_SIZE)
-                                ).into()
-                            ).unwrap();
+                        let (chunk_pos, chunk) = self.get_chunk_at_neighborhood_pos(position).unwrap();
+                        let local_pos = neighborhood_pos_to_local_pos(position, chunk_pos);
+                        let particle = chunk.get_particle(local_pos).unwrap();
                         *chunk.attributes().$attr.get(particle.id).unwrap()
                     }
 
                     pub fn [<set_ $attr>](&mut self, position: IVec2, value: $type) {
-                        let mut chunk = self.get_chunk_at_pos_mut(position).unwrap();
-                        let particle = *chunk.get_particle_mut(
-                                (
-                                    positive_mod(position.x, CHUNK_SIZE),
-                                    positive_mod(position.y, CHUNK_SIZE)
-                                ).into()
-                            ).unwrap();
+                        let (chunk_pos, chunk) = self.get_chunk_at_neighborhood_pos_mut(position).unwrap();
+                        let local_pos = neighborhood_pos_to_local_pos(position, chunk_pos);
+                        let particle = *chunk.get_particle_mut(local_pos).unwrap();
                         chunk.attributes_mut().$attr.set(particle.id, value);
                     }
                 }
@@ -466,8 +459,7 @@ define_attributes_and_swap! {
 }
 
 pub struct ChunkNeighborhoodView<'a> {
-    center_chunk_position: IVec2,
-    chunks: [(IVec2, RwLockWriteGuard<'a, ChunkData>); 9],
+    chunks: [RwLockWriteGuard<'a, ChunkData>; 9],
 }
 
 impl<'a> ChunkNeighborhoodView<'a> {
@@ -476,80 +468,77 @@ impl<'a> ChunkNeighborhoodView<'a> {
         neighbors: impl Iterator<Item = (IVec2, &'a Chunk)>,
     ) -> ChunkNeighborhoodView<'a> {
         let chunks = {
-            const ARRAY_REPEAT_VALUE: MaybeUninit<(
-                bevy::prelude::IVec2,
-                std::sync::RwLockWriteGuard<'_, ChunkData>,
-            )> = MaybeUninit::uninit();
+            const ARRAY_REPEAT_VALUE: MaybeUninit<std::sync::RwLockWriteGuard<'_, ChunkData>> =
+                MaybeUninit::uninit();
 
-            let mut chunks_uninit: [MaybeUninit<(IVec2, RwLockWriteGuard<'a, ChunkData>)>; 9] =
+            let mut chunks_uninit: [MaybeUninit<RwLockWriteGuard<'a, ChunkData>>; 9] =
                 [ARRAY_REPEAT_VALUE; 9];
 
             for (pos, chunk) in std::iter::once(center_chunk).chain(neighbors) {
-                let index = ((pos.x - center_chunk.0.x), (pos.y - center_chunk.0.y));
-                let index = Self::local_pos_to_index(index.into());
-                chunks_uninit[index].write((pos, chunk.write().unwrap()));
+                let index = (
+                    (pos.x + 1 - center_chunk.0.x),
+                    (pos.y + 1 - center_chunk.0.y),
+                );
+                let index = chunk_pos_to_index(index.into());
+                chunks_uninit[index].write(chunk.write().unwrap());
             }
 
             unsafe { chunks_uninit.map(|p| p.assume_init()) }
         };
 
-        let center_chunk_position = center_chunk.0;
-        ChunkNeighborhoodView {
-            chunks,
-            center_chunk_position,
-        }
+        ChunkNeighborhoodView { chunks }
     }
 
-    fn local_pos_to_index(pos: IVec2) -> usize {
-        (pos.x + 1 + (pos.y + 1) * 3) as usize
-    }
-
-    fn global_to_local_pos(&self, pos: IVec2) -> IVec2 {
-        pos - self.center_chunk_position
-    }
-
-    fn global_pos_to_index(&self, pos: IVec2) -> usize {
-        Self::local_pos_to_index(self.global_to_local_pos(pos))
-    }
-
-    pub fn center_chunk(&self) -> &ChunkData {
-        self.chunks[4].1.deref()
+    fn center_chunk(&self) -> &ChunkData {
+        self.chunks[4].deref()
     }
 
     pub fn center_chunk_mut(&mut self) -> &mut ChunkData {
-        self.chunks[4].1.deref_mut()
+        self.chunks[4].deref_mut()
     }
 
     pub fn chunk_size(&self) -> IVec2 {
         IVec2::new(CHUNK_SIZE, CHUNK_SIZE)
     }
 
-    pub fn get_chunk_at_pos(&self, position: IVec2) -> Option<&ChunkData> {
-        let chunk_pos = tile_pos_to_chunk_pos(position);
+    fn get_chunk_at_chunk_pos(&self, position: IVec2) -> Option<&ChunkData> {
         self.chunks
-            .get(self.global_pos_to_index(chunk_pos))
-            .map(|(_, chunk)| chunk.deref())
+            .get(chunk_pos_to_index(position))
+            .map(|chunk| chunk.deref())
     }
 
-    pub fn get_chunk_at_pos_mut(&mut self, position: IVec2) -> Option<&mut ChunkData> {
-        let chunk_pos = tile_pos_to_chunk_pos(position);
-        let index = self.global_pos_to_index(chunk_pos);
-        self.chunks.get_mut(index).map(|chunk| chunk.1.deref_mut())
+    fn get_chunk_at_chunk_pos_mut(&mut self, position: IVec2) -> Option<&mut ChunkData> {
+        self.chunks
+            .get_mut(chunk_pos_to_index(position))
+            .map(|chunk| chunk.deref_mut())
+    }
+
+    fn get_chunk_at_neighborhood_pos(&self, position: IVec2) -> Option<(IVec2, &ChunkData)> {
+        let chunk_pos = neighborhood_pos_to_chunk_pos(position);
+        self.get_chunk_at_chunk_pos(chunk_pos)
+            .map(|chunk| (chunk_pos, chunk))
+    }
+
+    fn get_chunk_at_neighborhood_pos_mut(
+        &mut self,
+        position: IVec2,
+    ) -> Option<(IVec2, &mut ChunkData)> {
+        let chunk_pos = neighborhood_pos_to_chunk_pos(position);
+        self.get_chunk_at_chunk_pos_mut(chunk_pos)
+            .map(|chunk| (chunk_pos, chunk))
     }
 
     pub fn get_two_chunks_mut(
         &mut self,
-        pos_a: IVec2,
-        pos_b: IVec2,
-    ) -> Option<(&mut ChunkData, &mut ChunkData)> {
-        if pos_a == pos_b {
-            return None; // Early return if positions are the same, as we can't borrow mutably twice.
+        chunk_pos_a: IVec2,
+        chunk_pos_b: IVec2,
+    ) -> (&mut ChunkData, &mut ChunkData) {
+        if chunk_pos_a == chunk_pos_b {
+            panic!("Chunks are the same");
         }
 
-        let mut first_index = self.chunks.iter().position(|(pos, _)| *pos == pos_a)?;
-
-        let mut second_index = self.chunks.iter().position(|(pos, _)| *pos == pos_b)?;
-
+        let mut first_index = chunk_pos_to_index(chunk_pos_a);
+        let mut second_index = chunk_pos_to_index(chunk_pos_b);
         let mut flipped = false;
 
         if first_index > second_index {
@@ -558,63 +547,62 @@ impl<'a> ChunkNeighborhoodView<'a> {
         }
 
         let (first_half, second_half) = self.chunks.split_at_mut(second_index);
-        let chunk_a = &mut first_half[first_index].1;
-        let chunk_b = &mut second_half[0].1;
+        let chunk_a = &mut first_half[first_index];
+        let chunk_b = &mut second_half[0];
 
         if flipped {
-            Some((chunk_b, chunk_a))
+            (chunk_b, chunk_a)
         } else {
-            Some((chunk_a, chunk_b))
+            (chunk_a, chunk_b)
         }
     }
 
     pub fn get_particle(&self, position: IVec2) -> &Particle {
-        let chunk = self.get_chunk_at_pos(position).unwrap();
-        chunk
-            .get_particle(
-                (
-                    positive_mod(position.x, CHUNK_SIZE),
-                    positive_mod(position.y, CHUNK_SIZE),
-                )
-                    .into(),
-            )
-            .unwrap()
+        let (chunk_pos, chunk) = self.get_chunk_at_neighborhood_pos(position).unwrap();
+        let local_pos = neighborhood_pos_to_local_pos(position, chunk_pos);
+        chunk.get_particle(local_pos).unwrap()
     }
 
     pub fn get_particle_mut(&mut self, position: IVec2) -> &mut Particle {
-        let mut chunk = self.get_chunk_at_pos_mut(position).unwrap();
-        chunk
-            .get_particle_mut(
-                (
-                    positive_mod(position.x, CHUNK_SIZE),
-                    positive_mod(position.y, CHUNK_SIZE),
-                )
-                    .into(),
-            )
-            .unwrap()
+        let (chunk_pos, chunk) = self.get_chunk_at_neighborhood_pos_mut(position).unwrap();
+        let local_pos = neighborhood_pos_to_local_pos(position, chunk_pos);
+        chunk.get_particle_mut(local_pos).unwrap()
     }
 
     pub fn set_particle(&mut self, position: IVec2, material: Material) {
-        let chunk = &mut self.get_chunk_at_pos_mut(position).unwrap();
-        chunk.set_particle_material(
-            (
-                positive_mod(position.x, CHUNK_SIZE),
-                positive_mod(position.y, CHUNK_SIZE),
-            )
-                .into(),
-            material,
-        );
+        let (chunk_pos, chunk) = self.get_chunk_at_neighborhood_pos_mut(position).unwrap();
+        let local_pos = neighborhood_pos_to_local_pos(position, chunk_pos);
+        chunk.set_particle_material(local_pos, material);
     }
 }
 
+const SHIFT: i32 = 6; // log2(CHUNK_SIZE)
+                      //
+fn neighborhood_pos_to_chunk_pos(position: IVec2) -> IVec2 {
+    let chunk_x = position.x >> SHIFT;
+    let chunk_y = position.y >> SHIFT;
+
+    IVec2::new(chunk_x, chunk_y)
+}
+
+fn neighborhood_pos_to_local_pos(position: IVec2, chunk_pos: IVec2) -> IVec2 {
+    let IVec2 {
+        x: chunk_x,
+        y: chunk_y,
+    } = chunk_pos;
+
+    let local_x = position.x - (chunk_x << SHIFT);
+    let local_y = position.y - (chunk_y << SHIFT);
+
+    IVec2::new(local_x, local_y)
+}
+
+fn chunk_pos_to_index(pos: IVec2) -> usize {
+    (pos.x + (pos.y) * 3) as usize
+}
 #[cfg(test)]
 mod test {
-    use bevy::{
-        app::{App, Update},
-        utils::default,
-    };
-
-    use crate::chunk;
+    use bevy::app::{App, Update};
 
     use super::*;
 
@@ -684,5 +672,74 @@ mod test {
             Some(chunk_neg_100_100),
             "Chunk -100, -100 not found"
         );
+    }
+
+    #[test]
+    fn test_neighborhood_pos_to_chunk_pos() {
+        assert_eq!(
+            neighborhood_pos_to_chunk_pos(IVec2::new(0, 0)),
+            IVec2::new(0, 0)
+        );
+        assert_eq!(
+            neighborhood_pos_to_chunk_pos(IVec2::new(63, 63)),
+            IVec2::new(0, 0)
+        );
+        assert_eq!(
+            neighborhood_pos_to_chunk_pos(IVec2::new(64, 64)),
+            IVec2::new(1, 1)
+        );
+        assert_eq!(
+            neighborhood_pos_to_chunk_pos(IVec2::new(65, 65)),
+            IVec2::new(1, 1)
+        );
+        assert_eq!(
+            neighborhood_pos_to_chunk_pos(IVec2::new(128, 0)),
+            IVec2::new(2, 0)
+        );
+        assert_eq!(
+            neighborhood_pos_to_chunk_pos(IVec2::new(0, 128)),
+            IVec2::new(0, 2)
+        )
+    }
+
+    #[test]
+    fn test_neighborhood_pos_to_local_pos() {
+        assert_eq!(
+            neighborhood_pos_to_local_pos(IVec2::new(0, 0), IVec2::new(0, 0)),
+            IVec2::new(0, 0)
+        );
+        assert_eq!(
+            neighborhood_pos_to_local_pos(IVec2::new(63, 63), IVec2::new(0, 0)),
+            IVec2::new(63, 63)
+        );
+        assert_eq!(
+            neighborhood_pos_to_local_pos(IVec2::new(64, 64), IVec2::new(1, 1)),
+            IVec2::new(0, 0)
+        );
+        assert_eq!(
+            neighborhood_pos_to_local_pos(IVec2::new(65, 65), IVec2::new(1, 1)),
+            IVec2::new(1, 1)
+        );
+        assert_eq!(
+            neighborhood_pos_to_local_pos(IVec2::new(128, 0), IVec2::new(2, 0)),
+            IVec2::new(0, 0)
+        );
+        assert_eq!(
+            neighborhood_pos_to_local_pos(IVec2::new(0, 128), IVec2::new(0, 2)),
+            IVec2::new(0, 0)
+        )
+    }
+
+    #[test]
+    fn test_chunk_pos_to_index() {
+        assert_eq!(chunk_pos_to_index(IVec2::new(0, 0)), 0);
+        assert_eq!(chunk_pos_to_index(IVec2::new(1, 0)), 1);
+        assert_eq!(chunk_pos_to_index(IVec2::new(2, 0)), 2);
+        assert_eq!(chunk_pos_to_index(IVec2::new(0, 1)), 3);
+        assert_eq!(chunk_pos_to_index(IVec2::new(1, 1)), 4);
+        assert_eq!(chunk_pos_to_index(IVec2::new(2, 1)), 5);
+        assert_eq!(chunk_pos_to_index(IVec2::new(0, 2)), 6);
+        assert_eq!(chunk_pos_to_index(IVec2::new(1, 2)), 7);
+        assert_eq!(chunk_pos_to_index(IVec2::new(2, 2)), 8);
     }
 }

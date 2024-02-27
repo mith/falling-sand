@@ -150,6 +150,8 @@
               rust-analyzer
               lldb
               nil
+              rr
+              gdb
             ]
             ++ nativeBuildInputs;
         };

@@ -33,14 +33,15 @@ use rand::{rngs::StdRng, SeedableRng};
 
 use crate::{
     chunk::{Chunk, ChunkData},
+    fall::fall,
     falling_sand_grid::{
         update_active_chunks, update_chunk_positions, update_chunk_positions_data, ActiveChunks,
         ChunkActive, ChunkPosition, ChunkPositions, ChunkPositionsData, CHUNK_SIZE,
     },
     fire::fire_to_smoke,
+    flow::flow,
     material::MaterialIterator,
     material::{Material, MaterialColor, MaterialPlugin},
-    movement::{fall, flow},
     process_chunks::ChunksParam,
     reactions::react,
     util::{chunk_neighbors, chunk_neighbors_n},

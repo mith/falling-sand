@@ -18,11 +18,11 @@ pub fn react(grid: ChunksParam, material_reactions: Res<MaterialReactions>) {
         let span = info_span!("react_closure");
         let _guard = span.enter();
         let chunk_size = grid.chunk_size();
-        let min_y = chunk_pos.y * chunk_size.y;
-        let max_y = (chunk_pos.y + 1) * chunk_size.y;
+        let min_y = chunk_size.y;
+        let max_y = chunk_size.y * 2;
         for y in min_y..max_y {
-            let min_x = chunk_pos.x * chunk_size.x;
-            let max_x = (chunk_pos.x + 1) * chunk_size.x;
+            let min_x = chunk_size.x;
+            let max_x = chunk_size.x * 2;
             for x in random_dir_range(grid.center_chunk_mut().rng(), min_x, max_x) {
                 let particle_position = (x, y).into();
                 let particle = *grid.get_particle(particle_position);
@@ -38,9 +38,9 @@ pub fn react(grid: ChunksParam, material_reactions: Res<MaterialReactions>) {
                         if dx == 0 && dy == 0 {
                             continue;
                         }
-                        let adjecant_particle_position = (x + dx, y + dy).into();
-                        let adjacent_particle = *grid.get_particle(adjecant_particle_position);
-                        if grid.get_dirty(adjecant_particle_position) {
+                        let adjecent_particle_position = (x + dx, y + dy).into();
+                        let adjacent_particle = *grid.get_particle(adjecent_particle_position);
+                        if grid.get_dirty(adjecent_particle_position) {
                             continue;
                         }
                         if let Some(reaction) =
@@ -64,16 +64,15 @@ pub fn react(grid: ChunksParam, material_reactions: Res<MaterialReactions>) {
                 }
 
                 let total_probability: u32 = probable_reactions.iter().map(|&(_, prob)| prob).sum();
+                if total_probability == 0 {
+                    continue;
+                }
                 let change_for_no_reaction = 100u32.saturating_sub(total_probability);
                 probable_reactions.push((particle.material, change_for_no_reaction));
 
                 let total_probability: u32 = probable_reactions
                     .iter()
                     .fold(0, |acc, &(_, prob)| acc + prob);
-
-                if total_probability == 0 {
-                    continue;
-                }
 
                 let change_for_no_reaction = 100 - total_probability.min(100);
 

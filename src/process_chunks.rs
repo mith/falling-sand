@@ -7,7 +7,10 @@ use bevy::{
     math::IVec2,
     utils::{tracing::span, HashMap},
 };
-use ndarray::parallel::prelude::{IntoParallelIterator, ParallelIterator};
+use ndarray::{
+    parallel::prelude::{IntoParallelIterator, ParallelIterator},
+    Array2,
+};
 use smallvec::SmallVec;
 
 use crate::{
@@ -18,7 +21,7 @@ use crate::{
     util::chunk_neighbors,
 };
 
-pub const PROCESSING_LIMIT: i32 = 10;
+pub const PROCESSING_LIMIT: i32 = 100;
 
 #[derive(SystemParam)]
 pub struct ChunksParam<'w> {
@@ -48,6 +51,14 @@ impl ChunksParam<'_> {
 
     pub fn get_chunks_at<const N: usize>(&self, chunk_positions: &[IVec2; N]) -> [&Chunk; N] {
         chunk_positions.map(|pos| self.chunk_positions_data.get_chunk_at(pos).unwrap())
+    }
+
+    pub fn get_neighborhood(&self, chunk_position: IVec2) -> Array2<&Chunk> {
+        let neighborhood = Array2::from_shape_fn((3, 3), |(y, x)| {
+            let pos = IVec2::new(x as i32 - 1, y as i32 - 1) + chunk_position;
+            self.get_chunk_at(pos)
+        });
+        neighborhood
     }
 
     pub fn chunk_exists(&self, position: IVec2) -> bool {

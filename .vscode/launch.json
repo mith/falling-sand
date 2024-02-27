@@ -53,6 +53,18 @@
             }
         },
         {
+            "type": "midas-rr",
+            "request": "launch",
+        }
+        {
+            "type": "midas-rr",
+            "request": "attach",
+            "name": "Launch replay debug session",
+            "cwd": "${workspaceFolder}",
+            "use-dap": true,
+            "trace": "Off",
+        },
+        {
             "type": "lldb",
             "request": "launch",
             "name": "Debug executable 'falling-sand' (release-debug)",
