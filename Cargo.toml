@@ -16,6 +16,7 @@ debug = 1
 [profile.dev-opt]
 inherits = "dev"
 opt-level = 1
+debug-assertions = true
 
 [profile.dev-opt.package."*"]
 opt-level = 3
