@@ -38,15 +38,15 @@ use crate::{
         ChunkPositionsData,
     },
     consts::CHUNK_SIZE,
-    fall::{fall, fall_chunk},
+    fall::fall_chunk,
     fire::fire_to_smoke,
-    flow::{flow, flow_chunk},
+    flow::flow_chunk,
     material::{
         Material, MaterialColor, MaterialDensities, MaterialFlowing, MaterialIterator,
         MaterialPlugin, MaterialReactions, MaterialStates,
     },
     process_chunks::{process_chunks_neighborhood, ChunksParam},
-    reactions::{react, react_chunk},
+    reactions::react_chunk,
     util::{chunk_neighbors, chunk_neighbors_n},
 };
 

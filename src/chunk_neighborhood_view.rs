@@ -1,25 +1,17 @@
 use std::{
     mem::MaybeUninit,
     ops::{Deref, DerefMut},
-    sync::{Arc, RwLock, RwLockWriteGuard},
+    sync::RwLockWriteGuard,
 };
 
-use bevy::{
-    ecs::{
-        entity::Entity,
-        system::{Query, Res, SystemParam},
-    },
-    math::IVec2,
-};
+use bevy::math::IVec2;
 
 use crate::{
     chunk::{Chunk, ChunkData},
-    chunk_positions::ChunkPositions,
     consts::{CHUNK_SIZE, SHIFT},
     material::Material,
     particle_attributes::swap_particles_between_chunks,
     particle_grid::Particle,
-    util::{positive_mod, tile_pos_to_chunk_pos},
 };
 
 pub struct ChunkNeighborhoodView<'a> {
@@ -135,7 +127,7 @@ impl<'a> ChunkNeighborhoodView<'a> {
 
         if chunk_a_pos == chunk_b_pos {
             let chunk = self.get_chunk_at_chunk_pos_mut(chunk_a_pos).unwrap();
-            chunk.swap_particles(particle_pos_a.into(), particle_pos_b.into());
+            chunk.swap_particles(particle_pos_a, particle_pos_b);
         } else {
             let (chunk_a, chunk_b) = self.get_two_chunks_mut(chunk_a_pos, chunk_b_pos);
 

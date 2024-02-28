@@ -1,6 +1,5 @@
 use bevy::{prelude::*, utils::HashMap};
 
-use bitfield::bitfield_bitrange;
 use bytemuck::{Contiguous, NoUninit};
 use enum_map::EnumMap;
 
