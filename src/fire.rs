@@ -18,7 +18,7 @@ pub fn fire_to_smoke(grid: ChunksParam) {
             for x in 0..max_x {
                 let particle_position = IVec2::new(x, y);
                 let particle = *chunk.get_particle(particle_position).unwrap();
-                if particle.material == Material::Fire && chunk.rng().gen_bool(0.1) {
+                if particle.material() == Material::Fire && chunk.rng().gen_bool(0.1) {
                     chunk.set_particle_material(particle_position, Material::Smoke);
                 }
             }

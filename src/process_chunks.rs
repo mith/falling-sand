@@ -12,8 +12,10 @@ use ndarray::{
 };
 
 use crate::{
+    active_chunks::ActiveChunks,
     chunk::{Chunk, ChunkData},
-    falling_sand_grid::{ActiveChunks, ChunkNeighborhoodView, ChunkPositions, ChunkPositionsData},
+    chunk_neighborhood_view::ChunkNeighborhoodView,
+    chunk_positions::{ChunkPositions, ChunkPositionsData},
 };
 
 pub const PROCESSING_LIMIT: i32 = 100;
@@ -53,7 +55,7 @@ impl ChunksParam<'_> {
     }
 }
 
-pub fn process_chunks<F>(grid: &ChunksParam, operation: F)
+pub fn process_chunks_neighborhood<F>(grid: &ChunksParam, operation: F)
 where
     F: Fn(IVec2, &mut ChunkNeighborhoodView) + Sync,
 {

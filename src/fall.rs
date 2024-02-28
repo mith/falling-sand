@@ -3,9 +3,10 @@ use rand::Rng;
 use bevy::{ecs::system::Res, log::info_span, math::IVec2};
 
 use crate::{
-    falling_sand_grid::ChunkNeighborhoodView,
+    chunk_neighborhood_view::ChunkNeighborhoodView,
     material::{MaterialDensities, MaterialStates, StateOfMatter},
-    process_chunks::{process_chunks, ChunksParam},
+    particle_grid::Particle,
+    process_chunks::{process_chunks_neighborhood, ChunksParam},
     util::{below, below_left, below_right, left, random_dir_range, right},
 };
 
@@ -14,12 +15,12 @@ pub fn fall(
     material_states: Res<MaterialStates>,
     material_densities: Res<MaterialDensities>,
 ) {
-    process_chunks(&grid, |_chunk_pos, grid| {
+    process_chunks_neighborhood(&grid, |_chunk_pos, grid| {
         fall_chunk(grid, &material_states, &material_densities)
     });
 }
 
-fn fall_chunk(
+pub fn fall_chunk(
     grid: &mut ChunkNeighborhoodView,
     material_states: &MaterialStates,
     material_densities: &MaterialDensities,
@@ -39,8 +40,7 @@ fn fall_chunk(
         for x in random_dir_range {
             let particle_position = IVec2::new(x, y);
             let particle = *grid.get_particle(particle_position);
-            let particle_is_dirty: bool = grid.get_dirty(particle_position);
-            if material_states[particle.material] == StateOfMatter::Solid || particle_is_dirty {
+            if particle.dirty() || material_states[particle.material()] == StateOfMatter::Solid {
                 continue;
             }
 
@@ -60,7 +60,7 @@ fn fall_chunk(
                 grid.center_chunk_mut()
                     .attributes_mut()
                     .velocity
-                    .set(particle.id, IVec2::NEG_Y);
+                    .set(particle.id(), IVec2::NEG_Y);
                 continue;
             }
 
@@ -97,30 +97,29 @@ fn fall_chunk(
             grid.center_chunk_mut()
                 .attributes_mut()
                 .velocity
-                .set(particle.id, other_particle_position - particle_position);
+                .set(particle.id(), other_particle_position - particle_position);
         }
     }
 }
 
 fn can_fall_into(
-    grid: &mut ChunkNeighborhoodView<'_>,
+    grid: &mut ChunkNeighborhoodView,
     other_particle_position: IVec2,
     material_states: &MaterialStates,
-    particle: crate::particle_grid::Particle,
+    particle: Particle,
     material_densities: &MaterialDensities,
 ) -> bool {
     let other_particle = *grid.get_particle(other_particle_position);
-    if other_particle.material == particle.material {
-        return false;
-    }
-    if material_states[other_particle.material] == StateOfMatter::Solid {
-        return false;
-    }
-    if grid.get_dirty(other_particle_position) {
+    if other_particle.dirty()
+        || other_particle.material() == particle.material()
+        || material_states[other_particle.material()] == StateOfMatter::Solid
+    {
         return false;
     }
 
-    return (material_densities[particle.material] > material_densities[other_particle.material])
-        || (material_densities[particle.material] == material_densities[other_particle.material]
+    return (material_densities[particle.material()]
+        > material_densities[other_particle.material()])
+        || (material_densities[particle.material()]
+            == material_densities[other_particle.material()]
             && grid.center_chunk_mut().rng().gen_bool(0.01));
 }

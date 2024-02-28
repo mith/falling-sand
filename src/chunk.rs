@@ -8,8 +8,8 @@ use bevy::{
 use rand::rngs::StdRng;
 
 use crate::{
-    falling_sand_grid::ParticleAttributes,
     material::Material,
+    particle_attributes::ParticleAttributes,
     particle_grid::{Particle, ParticleGrid},
 };
 
@@ -48,6 +48,10 @@ impl ChunkData {
         &self.particles
     }
 
+    pub fn particles_mut(&mut self) -> &mut ParticleGrid {
+        &mut self.particles
+    }
+
     pub fn attributes(&self) -> &ParticleAttributes {
         &self.attributes
     }
@@ -64,22 +68,8 @@ impl ChunkData {
     }
 
     pub fn swap_particles(&mut self, a: IVec2, b: IVec2) {
-        // MaRk the particles as dirty
-        let a_id = self
-            .particles
-            .array()
-            .get((a.x as usize, a.y as usize))
-            .unwrap()
-            .id;
-        let b_id = self
-            .particles
-            .array()
-            .get((b.x as usize, b.y as usize))
-            .unwrap()
-            .id;
-
-        self.attributes.dirty.set(a_id, true);
-        self.attributes.dirty.set(b_id, true);
+        self.get_particle_mut(a).unwrap().set_dirty(true);
+        self.get_particle_mut(b).unwrap().set_dirty(true);
 
         // Swap the particles
         self.particles
@@ -101,10 +91,8 @@ impl ChunkData {
     pub fn set_particle_material(&mut self, position: IVec2, material: Material) {
         self.dirty = true;
         let particle = self.get_particle_mut(position).unwrap();
-        particle.material = material;
-        let particle_id = particle.id;
-        // Mark the particle as dirty
-        self.attributes.dirty.set(particle_id, true);
+        particle.set_material(material);
+        particle.set_dirty(true);
     }
 
     pub fn rng(&mut self) -> &mut StdRng {

@@ -1,6 +1,8 @@
 use bevy::math::IVec2;
 use rand::{rngs::StdRng, Rng};
 
+use crate::consts::CHUNK_SIZE;
+
 pub fn positive_mod(a: i32, b: i32) -> i32 {
     (a % b + b) % b
 }
@@ -69,12 +71,30 @@ pub fn chunk_neighbors_n(chunk_position: IVec2, n: i32) -> Vec<IVec2> {
     }
     neighbors
 }
-
+pub fn tile_pos_to_chunk_pos(IVec2 { x, y }: IVec2) -> IVec2 {
+    let floor_div = |a: i32, b: i32| {
+        if a < 0 && a % b != 0 {
+            (a / b) - 1
+        } else {
+            a / b
+        }
+    };
+    IVec2::new(floor_div(x, CHUNK_SIZE), floor_div(y, CHUNK_SIZE))
+}
 #[cfg(test)]
 mod test {
     use rand::SeedableRng;
 
     use super::*;
+
+    #[test]
+    fn test_tile_pos_to_chunk_pos() {
+        assert_eq!(tile_pos_to_chunk_pos((0, 0).into()), IVec2::new(0, 0));
+        assert_eq!(tile_pos_to_chunk_pos((63, 63).into()), IVec2::new(0, 0));
+        assert_eq!(tile_pos_to_chunk_pos((64, 64).into()), IVec2::new(1, 1));
+        assert_eq!(tile_pos_to_chunk_pos((65, 65).into()), IVec2::new(1, 1));
+        assert_eq!(tile_pos_to_chunk_pos((0, -1).into()), IVec2::new(0, -1));
+    }
 
     #[test]
     fn test_random_dir_range() {

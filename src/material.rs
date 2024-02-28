@@ -1,5 +1,6 @@
 use bevy::{prelude::*, utils::HashMap};
 
+use bitfield::bitfield_bitrange;
 use bytemuck::{Contiguous, NoUninit};
 use enum_map::EnumMap;
 
@@ -16,7 +17,7 @@ impl Plugin for MaterialPlugin {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Enum, NoUninit, Reflect, Hash)]
-#[repr(u32)]
+#[repr(u16)]
 pub enum Material {
     Air = 0,
     Bedrock = 1,
@@ -27,6 +28,18 @@ pub enum Material {
     Wood = 6,
     Steam = 7,
     Oil = 8,
+}
+
+impl From<Material> for u16 {
+    fn from(material: Material) -> u16 {
+        unsafe { std::mem::transmute(material) }
+    }
+}
+
+impl From<u16> for Material {
+    fn from(value: u16) -> Material {
+        unsafe { std::mem::transmute(value) }
+    }
 }
 
 unsafe impl Contiguous for Material {

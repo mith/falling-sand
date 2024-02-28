@@ -31,18 +31,22 @@ use itertools::Itertools;
 use rand::{rngs::StdRng, SeedableRng};
 
 use crate::{
+    active_chunks::{update_active_chunks, ActiveChunks, ChunkActive},
     chunk::{Chunk, ChunkData},
-    fall::fall,
-    falling_sand_grid::{
-        update_active_chunks, update_chunk_positions, update_chunk_positions_data, ActiveChunks,
-        ChunkActive, ChunkPosition, ChunkPositions, ChunkPositionsData, CHUNK_SIZE,
+    chunk_positions::{
+        update_chunk_positions, update_chunk_positions_data, ChunkPosition, ChunkPositions,
+        ChunkPositionsData,
     },
+    consts::CHUNK_SIZE,
+    fall::{fall, fall_chunk},
     fire::fire_to_smoke,
-    flow::flow,
-    material::MaterialIterator,
-    material::{Material, MaterialColor, MaterialPlugin},
-    process_chunks::ChunksParam,
-    reactions::react,
+    flow::{flow, flow_chunk},
+    material::{
+        Material, MaterialColor, MaterialDensities, MaterialFlowing, MaterialIterator,
+        MaterialPlugin, MaterialReactions, MaterialStates,
+    },
+    process_chunks::{process_chunks_neighborhood, ChunksParam},
+    reactions::{react, react_chunk},
     util::{chunk_neighbors, chunk_neighbors_n},
 };
 
@@ -93,11 +97,12 @@ impl Plugin for FallingSandPlugin {
                     update_chunk_positions_data,
                 ),
                 clean_particles,
-                fall,
-                clean_particles,
-                flow,
-                clean_particles,
-                react,
+                apply_physics_to_chunks,
+                // fall,
+                // clean_particles,
+                // flow,
+                // clean_particles,
+                // react,
                 fire_to_smoke,
             )
                 .in_set(FallingSandSet)
@@ -161,15 +166,17 @@ which is required for texture binding arrays"
 
 fn clean_particles(chunk_query: Query<&Chunk>) {
     chunk_query.par_iter().for_each(|grid| {
-        grid.write()
-            .unwrap()
-            .attributes_mut()
-            .dirty
-            .iter_mut()
-            .for_each(|dirty| {
-                *dirty = false;
-            })
+        clean_particles_chunk(&mut grid.write().unwrap());
     });
+}
+
+fn clean_particles_chunk(grid: &mut ChunkData) {
+    grid.particles_mut()
+        .array_mut()
+        .iter_mut()
+        .for_each(|particle| {
+            particle.set_dirty(false);
+        });
 }
 
 fn clean_chunks(chunk_query: Query<&Chunk>) {
@@ -239,6 +246,26 @@ fn deactivate_clean_chunks(
     }
 }
 
+fn apply_physics_to_chunks(
+    grid: ChunksParam,
+    material_states: Res<MaterialStates>,
+    material_densities: Res<MaterialDensities>,
+    material_flowing: Res<MaterialFlowing>,
+    material_reactions: Res<MaterialReactions>,
+) {
+    process_chunks_neighborhood(&grid, |_chunk_pos, grid| {
+        fall_chunk(grid, &material_states, &material_densities);
+        flow_chunk(
+            grid,
+            &material_flowing,
+            &material_densities,
+            &material_states,
+        );
+        clean_particles_chunk(grid.center_chunk_mut());
+        react_chunk(grid, &material_reactions);
+    });
+}
+
 #[derive(Component, Reflect)]
 pub struct ChunkParticleGridImage {
     pub materials_texture: Handle<Image>,
@@ -295,7 +322,7 @@ impl Default for FallingSandSettings {
 
 #[derive(Clone, Reflect, AsBindGroup)]
 struct ChunkImages {
-    #[storage_texture(0, image_format = Rg32Uint, access = ReadOnly)]
+    #[storage_texture(0, image_format = R32Uint, access = ReadOnly)]
     pub grid_texture: Handle<Image>,
     #[storage_texture(2, image_format = Rgba8Unorm, access = WriteOnly)]
     pub color_texture: Handle<Image>,
@@ -387,7 +414,7 @@ impl FromWorld for FallingSandPipeline {
                     visibility: ShaderStages::COMPUTE,
                     ty: BindingType::StorageTexture {
                         access: StorageTextureAccess::ReadOnly,
-                        format: TextureFormat::Rg32Uint,
+                        format: TextureFormat::R32Uint,
                         view_dimension: TextureViewDimension::D2,
                     },
                     count: NonZeroU32::new(MAX_TEXTURE_COUNT as u32),
@@ -636,8 +663,8 @@ fn create_chunk_images(
             depth_or_array_layers: 1,
         },
         TextureDimension::D2,
-        &[0u8; 16],
-        TextureFormat::Rg32Uint,
+        &[0u8; 4],
+        TextureFormat::R32Uint,
         RenderAssetUsages::MAIN_WORLD | RenderAssetUsages::RENDER_WORLD,
     );
     grid_image.texture_descriptor.usage =

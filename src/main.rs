@@ -1,3 +1,5 @@
+#![recursion_limit = "256"]
+
 #[macro_use]
 extern crate enum_map;
 
@@ -10,7 +12,11 @@ use crate::{draw_tool::ToolState, falling_sand::FallingSandPlugin, material::Mat
 use bevy::prelude::*;
 use time_control::TimeControlPlugin;
 
+mod active_chunks;
 mod chunk;
+mod chunk_neighborhood_view;
+mod chunk_positions;
+mod consts;
 mod cursor_world_position;
 mod draw_tool;
 mod fall;
@@ -20,6 +26,7 @@ mod fire;
 mod flow;
 mod material;
 mod pan_zoom_camera;
+mod particle_attributes;
 mod particle_grid;
 mod process_chunks;
 mod reactions;
