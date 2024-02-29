@@ -33,24 +33,29 @@ pub fn flow_chunk(
     let span = info_span!("flow_chunk");
     let _guard = span.enter();
     let chunk_size = grid.chunk_size();
-    let min_y = chunk_size.y;
-    let max_y = chunk_size.y * 2;
+    let min_y = 0;
+    let max_y = chunk_size.y;
     for y in min_y..max_y {
-        let min_x = chunk_size.x;
-        let max_x = chunk_size.x * 2;
+        let min_x = 0;
+        let max_x = chunk_size.x;
         let random_dir_range = {
             let rng = grid.center_chunk_mut().rng();
             random_dir_range(rng, min_x, max_x)
         };
         for x in random_dir_range {
-            let particle_position = IVec2::new(x, y);
-            let particle = *grid.get_particle(particle_position);
+            let particle_chunk_position = IVec2::new(x, y);
+            let particle = *grid
+                .center_chunk_mut()
+                .get_particle(particle_chunk_position)
+                .unwrap();
+
             if particle.dirty() || !material_flowing[particle.material()] {
                 continue;
             }
 
+            let particle_neighorhood_position = particle_chunk_position + chunk_size;
             // Don't flow on top of a less dense material
-            let particle_below_position = below(particle_position);
+            let particle_below_position = below(particle_neighorhood_position);
             if material_densities[grid.get_particle(particle_below_position).material()]
                 < material_densities[particle.material()]
             {
@@ -67,8 +72,9 @@ pub fn flow_chunk(
                 )
             };
 
-            let particle_left_position = left(particle_position);
-            let particle_right_position = right(particle_position);
+            let particle_neighorhood_position = particle_chunk_position + chunk_size;
+            let particle_left_position = left(particle_neighorhood_position);
+            let particle_right_position = right(particle_neighorhood_position);
             let can_flow_left = can_flow_into(particle_left_position);
             let can_flow_right = can_flow_into(particle_right_position);
 
@@ -101,11 +107,11 @@ pub fn flow_chunk(
                 continue;
             };
 
-            grid.swap_particles(particle_position, other_particle_position);
-            grid.center_chunk_mut()
-                .attributes_mut()
-                .velocity
-                .set(particle.id(), other_particle_position - particle_position);
+            grid.swap_particles(particle_neighorhood_position, other_particle_position);
+            grid.center_chunk_mut().attributes_mut().velocity.set(
+                particle.id(),
+                other_particle_position - particle_neighorhood_position,
+            );
         }
     }
 }

@@ -39,7 +39,7 @@ use crate::{
     },
     consts::CHUNK_SIZE,
     fall::fall_chunk,
-    fire::fire_to_smoke,
+    fire::fire_to_smoke_chunk,
     flow::flow_chunk,
     material::{
         Material, MaterialColor, MaterialDensities, MaterialFlowing, MaterialIterator,
@@ -59,7 +59,13 @@ pub struct FallingSandPlugin {
 pub struct FallingSandSet;
 
 #[derive(SystemSet, Default, Debug, Clone, PartialEq, Eq, Hash)]
-pub struct FallingSandPostSet;
+struct FallingSandPreSet;
+
+#[derive(SystemSet, Default, Debug, Clone, PartialEq, Eq, Hash)]
+struct FallingSandPhysicsSet;
+
+#[derive(SystemSet, Default, Debug, Clone, PartialEq, Eq, Hash)]
+struct FallingSandPostSet;
 
 #[derive(Resource)]
 pub struct FallingSandRng(pub StdRng);
@@ -84,29 +90,25 @@ impl Plugin for FallingSandPlugin {
         .init_resource::<DirtyChunks>()
         .init_resource::<DirtyOrCreatedChunks>()
         .init_resource::<FallingSandImages>()
+        .add_systems(Startup, setup.before(FallingSandPreSet))
         .add_systems(
-            Startup,
-            setup.before(FallingSandSet).before(FallingSandPostSet),
+            FixedUpdate,
+            (
+                update_chunk_positions,
+                update_active_chunks,
+                update_chunk_positions_data,
+            )
+                .in_set(FallingSandSet)
+                .in_set(FallingSandPreSet)
+                .before(FallingSandPhysicsSet),
         )
         .add_systems(
             FixedUpdate,
-            ((
-                (
-                    update_chunk_positions,
-                    update_active_chunks,
-                    update_chunk_positions_data,
-                ),
-                clean_particles,
-                apply_physics_to_chunks,
-                // fall,
-                // clean_particles,
-                // flow,
-                // clean_particles,
-                // react,
-                fire_to_smoke,
-            )
+            (clean_particles, apply_physics_to_chunks)
+                .chain()
                 .in_set(FallingSandSet)
-                .chain(),),
+                .in_set(FallingSandPhysicsSet)
+                .chain(),
         )
         .add_systems(
             FixedUpdate,
@@ -121,8 +123,9 @@ impl Plugin for FallingSandPlugin {
                 clean_chunks,
             )
                 .chain()
+                .in_set(FallingSandSet)
                 .in_set(FallingSandPostSet)
-                .after(FallingSandSet),
+                .after(FallingSandPhysicsSet),
         )
         .add_systems(Update, draw_debug_gizmos);
 
@@ -254,6 +257,9 @@ fn apply_physics_to_chunks(
     material_reactions: Res<MaterialReactions>,
 ) {
     process_chunks_neighborhood(&grid, |_chunk_pos, grid| {
+        let span = info_span!("apply_physics_to_chunks");
+        let _guard = span.enter();
+
         fall_chunk(grid, &material_states, &material_densities);
         flow_chunk(
             grid,
@@ -263,6 +269,7 @@ fn apply_physics_to_chunks(
         );
         clean_particles_chunk(grid.center_chunk_mut());
         react_chunk(grid, &material_reactions);
+        fire_to_smoke_chunk(grid.center_chunk_mut());
     });
 }
 

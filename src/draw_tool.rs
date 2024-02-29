@@ -20,7 +20,7 @@ use crate::{
     chunk::Chunk,
     chunk_positions::{update_chunk_positions, ChunkPositions},
     cursor_world_position::CursorWorldPosition,
-    falling_sand::{ChunkCreationParams, FallingSandPostSet, FallingSandSet, FallingSandSettings},
+    falling_sand::{ChunkCreationParams, FallingSandSet, FallingSandSettings},
     falling_sand_grid::FallingSandGridQuery,
     material::Material,
     util::tile_pos_to_chunk_pos,
@@ -44,8 +44,7 @@ impl bevy::app::Plugin for DrawToolPlugin {
                 draw_particles,
             )
                 .chain()
-                .after(FallingSandSet)
-                .before(FallingSandPostSet),
+                .before(FallingSandSet),
         );
     }
 }

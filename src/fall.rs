@@ -28,18 +28,21 @@ pub fn fall_chunk(
     let span = info_span!("fall_chunk");
     let _guard = span.enter();
     let chunk_size = grid.chunk_size();
-    let min_y = chunk_size.y;
-    let max_y = chunk_size.y * 2;
+    let min_y = 0;
+    let max_y = chunk_size.y;
     for y in min_y..max_y {
-        let min_x = chunk_size.x;
-        let max_x = chunk_size.x * 2;
+        let min_x = 0;
+        let max_x = chunk_size.x;
         let random_dir_range = {
             let rng = grid.center_chunk_mut().rng();
             random_dir_range(rng, min_x, max_x)
         };
         for x in random_dir_range {
-            let particle_position = IVec2::new(x, y);
-            let particle = *grid.get_particle(particle_position);
+            let particle_chunk_position = IVec2::new(x, y);
+            let particle = *grid
+                .center_chunk_mut()
+                .get_particle(particle_chunk_position)
+                .unwrap();
             if particle.dirty() || material_states[particle.material()] == StateOfMatter::Solid {
                 continue;
             }
@@ -54,9 +57,10 @@ pub fn fall_chunk(
                 )
             };
 
-            let particle_below_position = below(particle_position);
+            let particle_neighborhood_position = particle_chunk_position + chunk_size;
+            let particle_below_position = below(particle_neighborhood_position);
             if is_eligible_particle(particle_below_position) {
-                grid.swap_particles(particle_position, particle_below_position);
+                grid.swap_particles(particle_neighborhood_position, particle_below_position);
                 grid.center_chunk_mut()
                     .attributes_mut()
                     .velocity
@@ -64,15 +68,15 @@ pub fn fall_chunk(
                 continue;
             }
 
-            let particle_left_position = left(particle_position);
-            let particle_below_left_position = below_left(particle_position);
+            let particle_left_position = left(particle_neighborhood_position);
+            let particle_below_left_position = below_left(particle_neighborhood_position);
             let can_fall_left_down = {
                 is_eligible_particle(particle_below_left_position)
                     && is_eligible_particle(particle_left_position)
             };
 
-            let particle_right_position = right(particle_position);
-            let particle_below_right_position = below_right(particle_position);
+            let particle_right_position = right(particle_neighborhood_position);
+            let particle_below_right_position = below_right(particle_neighborhood_position);
             let can_fall_right_down = {
                 is_eligible_particle(particle_below_right_position)
                     && is_eligible_particle(particle_right_position)
@@ -93,11 +97,11 @@ pub fn fall_chunk(
                 continue;
             };
 
-            grid.swap_particles(particle_position, other_particle_position);
-            grid.center_chunk_mut()
-                .attributes_mut()
-                .velocity
-                .set(particle.id(), other_particle_position - particle_position);
+            grid.swap_particles(particle_neighborhood_position, other_particle_position);
+            grid.center_chunk_mut().attributes_mut().velocity.set(
+                particle.id(),
+                other_particle_position - particle_neighborhood_position,
+            );
         }
     }
 }

@@ -1,4 +1,4 @@
-use bevy::{ecs::system::Res, log::info_span};
+use bevy::{ecs::system::Res, log::info_span, math::IVec2};
 use rand::seq::SliceRandom;
 use smallvec::SmallVec;
 
@@ -21,26 +21,31 @@ pub fn react_chunk(grid: &mut ChunkNeighborhoodView, material_reactions: &Materi
     let span = info_span!("react_closure");
     let _guard = span.enter();
     let chunk_size = grid.chunk_size();
-    let min_y = chunk_size.y;
-    let max_y = chunk_size.y * 2;
+    let min_y = 0;
+    let max_y = chunk_size.y;
     for y in min_y..max_y {
-        let min_x = chunk_size.x;
-        let max_x = chunk_size.x * 2;
+        let min_x = 0;
+        let max_x = chunk_size.x;
         for x in random_dir_range(grid.center_chunk_mut().rng(), min_x, max_x) {
-            let particle_position = (x, y).into();
-            let particle = *grid.get_particle(particle_position);
+            let particle_chunk_position = IVec2::new(x, y);
+            let particle = *grid
+                .center_chunk_mut()
+                .get_particle(particle_chunk_position)
+                .unwrap();
             if particle.dirty() || !material_reactions.has_reactions_for(particle.material()) {
                 continue;
             }
 
             let mut probable_reactions: ReactionChoices = SmallVec::new();
 
+            let particle_neighborhood_position = particle_chunk_position + chunk_size;
             for dx in -1..=1 {
                 for dy in -1..=1 {
                     if dx == 0 && dy == 0 {
                         continue;
                     }
-                    let adjecent_particle_position = (x + dx, y + dy).into();
+                    let adjecent_particle_position =
+                        particle_neighborhood_position + IVec2::new(dx, dy);
                     let adjacent_particle = *grid.get_particle(adjecent_particle_position);
                     if adjacent_particle.dirty() {
                         continue;
@@ -86,7 +91,7 @@ pub fn react_chunk(grid: &mut ChunkNeighborhoodView, material_reactions: &Materi
                 })
                 .unwrap();
             if r.0 != particle.material() {
-                grid.set_particle(particle_position, r.0);
+                grid.set_particle(particle_neighborhood_position, r.0);
             }
         }
     }
