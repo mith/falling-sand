@@ -38,15 +38,12 @@ use crate::{
         ChunkPositionsData,
     },
     consts::CHUNK_SIZE,
-    fall::fall_chunk,
-    fire::fire_to_smoke_chunk,
-    flow::flow_chunk,
-    material::{
-        Material, MaterialColor, MaterialDensities, MaterialFlowing, MaterialIterator,
-        MaterialPlugin, MaterialReactions, MaterialStates,
-    },
-    process_chunks::{process_chunks_neighborhood, ChunksParam},
-    reactions::react_chunk,
+    fall::fall,
+    fire::fire_to_smoke,
+    flow::flow,
+    material::{Material, MaterialColor, MaterialIterator, MaterialPlugin},
+    process_chunks::ChunksParam,
+    reactions::react,
     util::{chunk_neighbors, chunk_neighbors_n},
 };
 
@@ -75,7 +72,6 @@ impl Plugin for FallingSandPlugin {
         app.add_plugins((
             ExtractResourcePlugin::<FallingSandImages>::default(),
             ExtractResourcePlugin::<FallingSandSettings>::default(),
-            ExtractResourcePlugin::<DirtyOrCreatedChunks>::default(),
             MaterialPlugin,
         ))
         .register_type::<DirtyChunks>()
@@ -88,7 +84,6 @@ impl Plugin for FallingSandPlugin {
         .init_resource::<ChunkPositionsData>()
         .init_resource::<ActiveChunks>()
         .init_resource::<DirtyChunks>()
-        .init_resource::<DirtyOrCreatedChunks>()
         .init_resource::<FallingSandImages>()
         .add_systems(Startup, setup.before(FallingSandPreSet))
         .add_systems(
@@ -104,7 +99,7 @@ impl Plugin for FallingSandPlugin {
         )
         .add_systems(
             FixedUpdate,
-            (clean_particles, apply_physics_to_chunks)
+            (fall, flow, clean_particles, react, fire_to_smoke)
                 .chain()
                 .in_set(FallingSandSet)
                 .in_set(FallingSandPhysicsSet)
@@ -120,6 +115,7 @@ impl Plugin for FallingSandPlugin {
                     deactivate_clean_chunks,
                     grid_to_texture,
                 ),
+                clean_particles,
                 clean_chunks,
             )
                 .chain()
@@ -169,7 +165,11 @@ which is required for texture binding arrays"
 
 fn clean_particles(chunk_query: Query<&Chunk>) {
     chunk_query.par_iter().for_each(|grid| {
-        clean_particles_chunk(&mut grid.write().unwrap());
+        let grid = &mut grid.write().unwrap();
+        if !grid.is_dirty() {
+            return;
+        }
+        clean_particles_chunk(grid);
     });
 }
 
@@ -190,23 +190,14 @@ fn clean_chunks(chunk_query: Query<&Chunk>) {
 
 fn update_dirty_chunks(
     mut dirty_chunks: ResMut<DirtyChunks>,
-    mut dirty_or_created_chunks: ResMut<DirtyOrCreatedChunks>,
     chunk_query: Query<(&Chunk, &ChunkPosition)>,
-    mut seen_chunks: Local<HashSet<IVec2>>,
 ) {
     dirty_chunks.0.clear();
     for (chunk, chunk_position) in chunk_query.iter() {
         if chunk.read().unwrap().is_dirty() {
             dirty_chunks.0.insert(chunk_position.0);
         }
-
-        if !seen_chunks.contains(&chunk_position.0) {
-            dirty_or_created_chunks.0.insert(chunk_position.0);
-            seen_chunks.insert(chunk_position.0);
-        }
     }
-
-    dirty_or_created_chunks.0.extend(dirty_chunks.0.iter());
 }
 
 fn activate_dirty_chunks(
@@ -247,30 +238,6 @@ fn deactivate_clean_chunks(
             commands.entity(entity).remove::<ChunkActive>();
         }
     }
-}
-
-fn apply_physics_to_chunks(
-    grid: ChunksParam,
-    material_states: Res<MaterialStates>,
-    material_densities: Res<MaterialDensities>,
-    material_flowing: Res<MaterialFlowing>,
-    material_reactions: Res<MaterialReactions>,
-) {
-    process_chunks_neighborhood(&grid, |_chunk_pos, grid| {
-        let span = info_span!("apply_physics_to_chunks");
-        let _guard = span.enter();
-
-        fall_chunk(grid, &material_states, &material_densities);
-        flow_chunk(
-            grid,
-            &material_flowing,
-            &material_densities,
-            &material_states,
-        );
-        clean_particles_chunk(grid.center_chunk_mut());
-        react_chunk(grid, &material_reactions);
-        fire_to_smoke_chunk(grid.center_chunk_mut());
-    });
 }
 
 #[derive(Component, Reflect)]
@@ -343,9 +310,6 @@ struct FallingSandImages {
 
 #[derive(Resource, Clone, Default, Reflect)]
 struct DirtyChunks(HashSet<IVec2>);
-
-#[derive(Resource, Clone, ExtractResource, Default)]
-struct DirtyOrCreatedChunks(HashSet<IVec2>);
 
 #[derive(Resource, Default)]
 struct FallingSandImagesBindGroups(Vec<(u32, BindGroup)>);
