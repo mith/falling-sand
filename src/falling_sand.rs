@@ -99,7 +99,14 @@ impl Plugin for FallingSandPlugin {
         )
         .add_systems(
             FixedUpdate,
-            (fall, flow, clean_particles, react, fire_to_smoke)
+            (
+                fall,
+                clean_particles,
+                flow,
+                clean_particles,
+                react,
+                fire_to_smoke,
+            )
                 .chain()
                 .in_set(FallingSandSet)
                 .in_set(FallingSandPhysicsSet)

@@ -53,6 +53,17 @@ pub fn flow_chunk(
                 continue;
             }
 
+            let particle_momentum = *grid
+                .center_chunk_mut()
+                .attributes()
+                .momentum
+                .get(particle.id())
+                .unwrap();
+
+            if particle_momentum == 0 {
+                continue;
+            }
+
             let particle_neighorhood_position = particle_chunk_position + chunk_size;
             // Don't flow on top of a less dense material
             let particle_below_position = below(particle_neighorhood_position);
@@ -112,6 +123,10 @@ pub fn flow_chunk(
                 particle.id(),
                 other_particle_position - particle_neighorhood_position,
             );
+            grid.center_chunk_mut()
+                .attributes_mut()
+                .momentum
+                .set(particle.id(), particle_momentum - 1);
         }
     }
 }

@@ -53,4 +53,5 @@ macro_rules! define_attributes_and_swap {
 
 define_attributes_and_swap! {
     velocity: IVec2,
+    momentum: u8
 }

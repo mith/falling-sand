@@ -27,6 +27,7 @@ pub fn fall_chunk(
 ) {
     let span = info_span!("fall_chunk");
     let _guard = span.enter();
+    const MOMEMTUM_GAIN: u8 = 255;
     let chunk_size = grid.chunk_size();
     let min_y = 0;
     let max_y = chunk_size.y;
@@ -60,11 +61,15 @@ pub fn fall_chunk(
             let particle_neighborhood_position = particle_chunk_position + chunk_size;
             let particle_below_position = below(particle_neighborhood_position);
             if is_eligible_particle(particle_below_position) {
-                grid.swap_particles(particle_neighborhood_position, particle_below_position);
                 grid.center_chunk_mut()
                     .attributes_mut()
                     .velocity
                     .set(particle.id(), IVec2::NEG_Y);
+                grid.center_chunk_mut()
+                    .attributes_mut()
+                    .momentum
+                    .set(particle.id(), MOMEMTUM_GAIN);
+                grid.swap_particles(particle_neighborhood_position, particle_below_position);
                 continue;
             }
 
@@ -97,11 +102,15 @@ pub fn fall_chunk(
                 continue;
             };
 
-            grid.swap_particles(particle_neighborhood_position, other_particle_position);
             grid.center_chunk_mut().attributes_mut().velocity.set(
                 particle.id(),
                 other_particle_position - particle_neighborhood_position,
             );
+            grid.center_chunk_mut()
+                .attributes_mut()
+                .momentum
+                .set(particle.id(), MOMEMTUM_GAIN);
+            grid.swap_particles(particle_neighborhood_position, other_particle_position);
         }
     }
 }
