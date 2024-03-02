@@ -6,9 +6,12 @@ use bevy::{
     math::IVec2,
     utils::HashMap,
 };
+use rand::seq::SliceRandom;
 use smallvec::SmallVec;
 
-use crate::{chunk_positions::ChunkPosition, process_chunks::PROCESSING_LIMIT};
+use crate::{
+    chunk_positions::ChunkPosition, falling_sand::FallingSandRng, process_chunks::PROCESSING_LIMIT,
+};
 
 #[derive(Component)]
 #[component(storage = "SparseSet")]
@@ -40,6 +43,7 @@ fn chunk_pos_pass_index(pos: &IVec2) -> i32 {
 pub fn update_active_chunks(
     mut active_chunks: ResMut<ActiveChunks>,
     active_chunks_query: Query<(&ChunkActive, &ChunkPosition)>,
+    mut rng: ResMut<FallingSandRng>,
 ) {
     let ActiveChunks {
         ref mut passes,
@@ -62,4 +66,7 @@ pub fn update_active_chunks(
         }
         passes[set_index as usize].push(*chunk_pos);
     }
+
+    // Shuffle the passes around
+    active_chunks.passes.shuffle(&mut rng.0);
 }
