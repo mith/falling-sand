@@ -118,7 +118,6 @@ pub fn flow_chunk(
                 continue;
             };
 
-            grid.swap_particles(particle_neighorhood_position, other_particle_position);
             grid.center_chunk_mut().attributes_mut().velocity.set(
                 particle.id(),
                 other_particle_position - particle_neighorhood_position,
@@ -127,6 +126,7 @@ pub fn flow_chunk(
                 .attributes_mut()
                 .momentum
                 .set(particle.id(), particle_momentum - 1);
+            grid.swap_particles(particle_neighorhood_position, other_particle_position);
         }
     }
 }
