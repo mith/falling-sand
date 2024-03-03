@@ -85,6 +85,7 @@ impl Plugin for FallingSandPlugin {
         .init_resource::<ActiveChunks>()
         .init_resource::<DirtyChunks>()
         .init_resource::<FallingSandImages>()
+        .init_resource::<ChunkDebug>()
         .add_systems(Startup, setup.before(FallingSandPreSet))
         .add_systems(
             FixedUpdate,
@@ -130,7 +131,13 @@ impl Plugin for FallingSandPlugin {
                 .in_set(FallingSandPostSet)
                 .after(FallingSandPhysicsSet),
         )
-        .add_systems(Update, draw_debug_gizmos);
+        .add_systems(
+            Update,
+            (
+                toggle_chunk_debug,
+                draw_chunk_debug_gizmos.run_if(chunk_debug_enabled),
+            ),
+        );
 
         let render_app = app.sub_app_mut(RenderApp);
         render_app
@@ -523,7 +530,25 @@ impl render_graph::Node for FallingSandNode {
     }
 }
 
-fn draw_debug_gizmos(
+#[derive(Resource, Default)]
+struct ChunkDebug(bool);
+
+fn chunk_debug_enabled(terrain_debug: Res<ChunkDebug>) -> bool {
+    terrain_debug.0
+}
+
+const TERRAIN_DEBUG_TOGGLE_KEY: KeyCode = KeyCode::F3;
+
+fn toggle_chunk_debug(
+    keyboard_input: Res<ButtonInput<KeyCode>>,
+    mut terrain_debug: ResMut<ChunkDebug>,
+) {
+    if keyboard_input.just_pressed(TERRAIN_DEBUG_TOGGLE_KEY) {
+        terrain_debug.0 = !terrain_debug.0;
+    }
+}
+
+fn draw_chunk_debug_gizmos(
     mut gizmos: Gizmos,
     falling_sand_settings: Res<FallingSandSettings>,
     chunk_positions: Query<(&ChunkPosition, Option<&ChunkActive>)>,
@@ -661,7 +686,7 @@ fn create_chunk_images(
             depth_or_array_layers: 1,
         },
         TextureDimension::D2,
-        &[0, 0, 0, 255],
+        &[255, 255, 255, 255],
         TextureFormat::Rgba8Unorm,
         RenderAssetUsages::RENDER_WORLD,
     );

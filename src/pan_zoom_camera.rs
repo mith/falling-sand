@@ -1,4 +1,4 @@
-use bevy::{input::mouse::MouseWheel, prelude::*, render::camera::Camera};
+use bevy::{input::mouse::MouseWheel, prelude::*, render::camera::Camera, window::PrimaryWindow};
 
 pub struct PanZoomCameraPlugin;
 
@@ -27,16 +27,39 @@ impl Default for CameraSettings {
 }
 
 fn camera_zoom(
-    mut query: Query<&mut OrthographicProjection>,
+    mut camera_query: Query<(&mut Transform, &mut OrthographicProjection)>,
     mut mouse_wheel_events: EventReader<MouseWheel>,
+    window_query: Query<&Window, With<PrimaryWindow>>,
     camera_settings: Res<CameraSettings>,
 ) {
-    for mut projection in &mut query {
-        for event in mouse_wheel_events.read() {
-            projection.scale -= projection.scale * event.y * camera_settings.zoom_speed;
-            projection.scale = projection
-                .scale
-                .clamp(camera_settings.min_zoom, camera_settings.max_zoom);
+    let Ok(primary_window) = window_query.get_single() else {
+        return;
+    };
+    let Some(cursor_position) = primary_window.cursor_position() else {
+        return;
+    };
+
+    for event in mouse_wheel_events.read() {
+        for (mut transform, mut ortho) in camera_query.iter_mut() {
+            let old_scale = ortho.scale;
+            let mut zoom_change = ortho.scale * event.y.clamp(-1., 1.) * camera_settings.zoom_speed;
+            ortho.scale -= zoom_change;
+
+            if ortho.scale < camera_settings.min_zoom {
+                ortho.scale = camera_settings.min_zoom;
+                zoom_change = old_scale - ortho.scale;
+            } else if ortho.scale > camera_settings.max_zoom {
+                ortho.scale = camera_settings.max_zoom;
+                zoom_change = old_scale - ortho.scale;
+            }
+
+            // Move the camera toward the cursor position to keep the current object
+            // underneath it.
+            let from_center = cursor_position
+                - Vec2::new(primary_window.width() / 2., primary_window.height() / 2.);
+
+            let scaled_move = from_center * event.y.clamp(-1., 1.) * zoom_change.abs();
+            transform.translation += Vec3::new(scaled_move.x, -scaled_move.y, 0.);
         }
     }
 }

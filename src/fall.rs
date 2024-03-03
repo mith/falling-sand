@@ -130,9 +130,8 @@ fn can_fall_into(
         return false;
     }
 
-    return (material_densities[particle.material()]
-        > material_densities[other_particle.material()])
+    (material_densities[particle.material()] > material_densities[other_particle.material()])
         || (material_densities[particle.material()]
             == material_densities[other_particle.material()]
-            && grid.center_chunk_mut().rng().gen_bool(0.01));
+            && grid.center_chunk_mut().rng().gen_bool(0.01))
 }
