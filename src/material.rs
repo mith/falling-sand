@@ -1,3 +1,5 @@
+use std::fmt;
+
 use bevy::{prelude::*, utils::HashMap};
 
 use bytemuck::{Contiguous, NoUninit};
@@ -27,6 +29,22 @@ pub enum Material {
     Wood = 6,
     Steam = 7,
     Oil = 8,
+}
+
+impl fmt::Display for Material {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Material::Air => write!(f, "Air"),
+            Material::Bedrock => write!(f, "Bedrock"),
+            Material::Sand => write!(f, "Sand"),
+            Material::Water => write!(f, "Water"),
+            Material::Fire => write!(f, "Fire"),
+            Material::Smoke => write!(f, "Smoke"),
+            Material::Wood => write!(f, "Wood"),
+            Material::Steam => write!(f, "Steam"),
+            Material::Oil => write!(f, "Oil"),
+        }
+    }
 }
 
 impl From<Material> for u16 {

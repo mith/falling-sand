@@ -6,6 +6,7 @@ extern crate enum_map;
 use cursor_world_position::CursorWorldPositionPlugin;
 use draw_tool::DrawToolPlugin;
 
+use hovering_ui::HoveringUiPlugin;
 use pan_zoom_camera::{DragState, PanZoomCameraPlugin};
 
 use crate::{draw_tool::ToolState, falling_sand::FallingSandPlugin, material::Material};
@@ -24,6 +25,7 @@ mod falling_sand;
 mod falling_sand_grid;
 mod fire;
 mod flow;
+mod hovering_ui;
 mod material;
 mod pan_zoom_camera;
 mod particle_attributes;
@@ -41,6 +43,7 @@ fn main() {
         CursorWorldPositionPlugin,
         PanZoomCameraPlugin,
         FallingSandPlugin::default(),
+        HoveringUiPlugin,
         DrawToolPlugin,
         TimeControlPlugin,
     ));

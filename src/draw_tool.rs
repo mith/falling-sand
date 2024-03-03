@@ -1,16 +1,29 @@
 use bevy::{
-    app::{App, Update},
+    app::{App, Startup, Update},
+    asset::AssetServer,
     ecs::{
         change_detection::DetectChanges,
         component::Component,
         entity::Entity,
-        schedule::{apply_deferred, IntoSystemConfigs},
+        query::Changed,
+        schedule::{
+            apply_deferred,
+            common_conditions::{not, resource_exists},
+            IntoSystemConfigs, SystemSet,
+        },
         system::{Commands, Local, Query, Res, ResMut, Resource},
     },
+    hierarchy::BuildChildren,
     input::{keyboard::KeyCode, mouse::MouseButton, ButtonInput},
     math::{IVec2, Vec2},
+    prelude::{default, Color},
     reflect::Reflect,
+    text::TextStyle,
     time::{Time, Timer},
+    ui::{
+        node_bundles::{ButtonBundle, NodeBundle, TextBundle},
+        Display, Interaction, JustifyContent, Style, UiRect, Val,
+    },
     utils::HashMap,
 };
 use itertools::Itertools;
@@ -22,30 +35,138 @@ use crate::{
     cursor_world_position::CursorWorldPosition,
     falling_sand::{ChunkCreationParams, FallingSandSet, FallingSandSettings},
     falling_sand_grid::FallingSandGridQuery,
-    material::Material,
+    hovering_ui::{HoveringUiSet, UiFocused},
+    material::{Material, MaterialColor, MaterialIterator},
     util::tile_pos_to_chunk_pos,
 };
 
 pub struct DrawToolPlugin;
 
+#[derive(SystemSet, Clone, Debug, PartialEq, Eq, Hash)]
+struct DrawToolSet;
+
+#[derive(SystemSet, Clone, Debug, PartialEq, Eq, Hash)]
+struct DrawToolPickerSet;
+
+#[derive(SystemSet, Clone, Debug, PartialEq, Eq, Hash)]
+struct DrawToolUpdateSet;
+
 impl bevy::app::Plugin for DrawToolPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<CursorTilePosition>().add_systems(
-            Update,
-            (
-                cursor_tile_position_system,
-                update_chunk_positions,
-                switch_tool_system,
-                calculate_stroke,
-                apply_deferred,
-                spawn_chunk_under_stroke,
-                apply_deferred,
-                update_chunk_positions,
-                draw_particles,
+        app.init_resource::<CursorTilePosition>()
+            .add_systems(Startup, setup_ui)
+            .add_systems(
+                Update,
+                (
+                    cursor_tile_position_system,
+                    update_chunk_positions,
+                    calculate_stroke,
+                    apply_deferred,
+                    spawn_chunk_under_stroke,
+                    apply_deferred,
+                    update_chunk_positions,
+                    draw_particles,
+                )
+                    .chain()
+                    .run_if(not(resource_exists::<UiFocused>))
+                    .before(FallingSandSet)
+                    .before(HoveringUiSet)
+                    .in_set(DrawToolUpdateSet)
+                    .in_set(DrawToolSet),
             )
-                .chain()
-                .before(FallingSandSet),
-        );
+            .add_systems(
+                Update,
+                (switch_tool_system, material_button_system)
+                    .before(DrawToolUpdateSet)
+                    .in_set(DrawToolPickerSet)
+                    .in_set(DrawToolSet),
+            );
+    }
+}
+
+#[derive(Component)]
+struct MaterialButton(Material);
+
+fn setup_ui(
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+    material_colors: Res<MaterialColor>,
+) {
+    commands
+        .spawn((
+            Interaction::default(),
+            NodeBundle {
+                style: Style {
+                    justify_content: JustifyContent::SpaceBetween,
+                    border: UiRect::all(Val::Px(2.)),
+                    display: Display::Flex,
+                    flex_direction: bevy::ui::FlexDirection::Column,
+                    padding: UiRect::all(Val::Px(2.)),
+                    margin: UiRect::all(Val::Px(2.)),
+                    ..default()
+                },
+                border_color: (Color::GRAY * 1.8).into(),
+                background_color: Color::WHITE.into(),
+                ..default()
+            },
+        ))
+        .with_children(|parent| {
+            for material in MaterialIterator::new() {
+                let material_color = material_colors.0[material];
+                let material_color =
+                    Color::rgb_u8(material_color[0], material_color[1], material_color[2]);
+
+                let lightness = material_color.l();
+
+                let text_color = if lightness > 0.5 {
+                    Color::BLACK
+                } else {
+                    Color::WHITE
+                };
+
+                let border_color = if lightness > 0.5 {
+                    material_color * 0.8
+                } else {
+                    material_color * 1.2
+                };
+
+                parent
+                    .spawn((
+                        MaterialButton(material),
+                        ButtonBundle {
+                            style: Style {
+                                margin: UiRect::all(Val::Px(2.)),
+                                padding: UiRect::all(Val::Px(2.)),
+                                border: UiRect::all(Val::Px(2.)),
+                                ..default()
+                            },
+                            border_color: border_color.into(),
+                            background_color: material_color.into(),
+                            ..default()
+                        },
+                    ))
+                    .with_children(|parent| {
+                        parent.spawn(TextBundle::from_section(
+                            material.to_string(),
+                            TextStyle {
+                                font: asset_server.load("fonts/PublicPixel-z84yD.ttf"),
+                                color: text_color,
+                                ..default()
+                            },
+                        ));
+                    });
+            }
+        });
+}
+
+fn material_button_system(
+    interaction_query: Query<(&Interaction, &MaterialButton), Changed<Interaction>>,
+    mut tool_state: ResMut<ToolState>,
+) {
+    for (interaction, material_button) in interaction_query.iter() {
+        if *interaction == Interaction::Pressed {
+            tool_state.draw_type = material_button.0;
+        }
     }
 }
 
