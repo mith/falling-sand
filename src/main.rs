@@ -1,5 +1,3 @@
-#![recursion_limit = "256"]
-
 #[macro_use]
 extern crate enum_map;
 
@@ -32,6 +30,7 @@ mod particle_attributes;
 mod particle_grid;
 mod process_chunks;
 mod reactions;
+mod render;
 mod time_control;
 mod util;
 
@@ -46,14 +45,12 @@ fn main() {
         HoveringUiPlugin,
         DrawToolPlugin,
         TimeControlPlugin,
-    ));
-
-    app.add_systems(Startup, setup);
-    app.insert_resource(ClearColor(Color::WHITE))
-        .insert_resource(ToolState {
-            draw_type: Material::Sand,
-        })
-        .run();
+    ))
+    .insert_resource(ToolState {
+        draw_type: Material::Sand,
+    })
+    .add_systems(Startup, setup)
+    .run();
 }
 
 fn setup(mut commands: Commands) {

@@ -40,7 +40,7 @@ fn chunk_pos_pass_index(pos: &IVec2) -> i32 {
     x + y * 3
 }
 
-pub fn update_active_chunks(
+pub fn gather_active_chunks(
     mut active_chunks: ResMut<ActiveChunks>,
     active_chunks_query: Query<(&ChunkActive, &ChunkPosition)>,
     mut rng: ResMut<FallingSandRng>,

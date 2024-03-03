@@ -27,7 +27,7 @@ pub fn fall_chunk(
 ) {
     let span = info_span!("fall_chunk");
     let _guard = span.enter();
-    const MOMEMTUM_GAIN: u8 = 255;
+    const MOMEMTUM_GAIN: u16 = 4096;
     let chunk_size = grid.chunk_size();
     let min_y = 0;
     let max_y = chunk_size.y;

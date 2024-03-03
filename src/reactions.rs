@@ -74,14 +74,15 @@ pub fn react_chunk(grid: &mut ChunkNeighborhoodView, material_reactions: &Materi
             if total_probability == 0 {
                 continue;
             }
-            let change_for_no_reaction = 100u32.saturating_sub(total_probability);
+            let change_in_n = 10000u32;
+            let change_for_no_reaction = change_in_n.saturating_sub(total_probability);
             probable_reactions.push((particle.material(), change_for_no_reaction));
 
             let total_probability: u32 = probable_reactions
                 .iter()
                 .fold(0, |acc, &(_, prob)| acc + prob);
 
-            let change_for_no_reaction = 100 - total_probability.min(100);
+            let change_for_no_reaction = change_in_n - total_probability.min(change_in_n);
 
             probable_reactions.push((particle.material(), change_for_no_reaction));
 

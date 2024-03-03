@@ -1,5 +1,5 @@
 use bevy::{
-    app::{App, Startup, Update},
+    app::{App, FixedUpdate, Startup, Update},
     asset::AssetServer,
     ecs::{
         change_detection::DetectChanges,
@@ -33,7 +33,7 @@ use crate::{
     chunk::Chunk,
     chunk_positions::{update_chunk_positions, ChunkPositions},
     cursor_world_position::CursorWorldPosition,
-    falling_sand::{ChunkCreationParams, FallingSandSet, FallingSandSettings},
+    falling_sand::{ChunkCreationParams, FallingSandCleanSet, FallingSandSet, FallingSandSettings},
     falling_sand_grid::FallingSandGridQuery,
     hovering_ui::{HoveringUiSet, UiFocused},
     material::{Material, MaterialColor, MaterialIterator},
@@ -51,6 +51,9 @@ struct DrawToolPickerSet;
 #[derive(SystemSet, Clone, Debug, PartialEq, Eq, Hash)]
 struct DrawToolUpdateSet;
 
+#[derive(SystemSet, Clone, Debug, PartialEq, Eq, Hash)]
+struct DrawToolFixedUpdateSet;
+
 impl bevy::app::Plugin for DrawToolPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<CursorTilePosition>()
@@ -65,14 +68,19 @@ impl bevy::app::Plugin for DrawToolPlugin {
                     spawn_chunk_under_stroke,
                     apply_deferred,
                     update_chunk_positions,
-                    draw_particles,
                 )
                     .chain()
                     .run_if(not(resource_exists::<UiFocused>))
-                    .before(FallingSandSet)
                     .before(HoveringUiSet)
                     .in_set(DrawToolUpdateSet)
                     .in_set(DrawToolSet),
+            )
+            .add_systems(
+                FixedUpdate,
+                draw_particles
+                    .run_if(not(resource_exists::<UiFocused>))
+                    .before(FallingSandSet)
+                    .in_set(DrawToolFixedUpdateSet),
             )
             .add_systems(
                 Update,
@@ -113,8 +121,6 @@ fn setup_ui(
         .with_children(|parent| {
             for material in MaterialIterator::new() {
                 let material_color = material_colors.0[material];
-                let material_color =
-                    Color::rgb_u8(material_color[0], material_color[1], material_color[2]);
 
                 let lightness = material_color.l();
 

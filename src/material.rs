@@ -5,14 +5,20 @@ use bevy::{prelude::*, utils::HashMap};
 use bytemuck::{Contiguous, NoUninit};
 use enum_map::EnumMap;
 
+use crate::consts::INITIAL_MATERIAL;
+
 pub struct MaterialPlugin;
 
 impl Plugin for MaterialPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<MaterialDensities>()
+        let material_color: MaterialColor = default();
+        app.insert_resource(ClearColor(
+            material_color[INITIAL_MATERIAL].as_rgba_linear(),
+        ));
+        app.insert_resource(material_color)
+            .init_resource::<MaterialDensities>()
             .init_resource::<MaterialStates>()
             .init_resource::<MaterialFlowing>()
-            .init_resource::<MaterialColor>()
             .init_resource::<MaterialReactions>();
     }
 }
@@ -170,20 +176,20 @@ impl Default for MaterialFlowing {
 }
 
 #[derive(Resource, Deref)]
-pub struct MaterialColor(pub EnumMap<Material, [u8; 3]>);
+pub struct MaterialColor(pub EnumMap<Material, Color>);
 
 impl Default for MaterialColor {
     fn default() -> Self {
         MaterialColor(enum_map! {
-            Material::Air => [255, 255, 255u8],
-            Material::Bedrock => [77, 77, 77u8],
-            Material::Sand => [244, 215, 21u8],
-            Material::Water => [0, 0, 255u8],
-            Material::Fire => [255, 0, 0u8],
-            Material::Smoke => [128, 128, 128u8],
-            Material::Wood => [139, 69, 19u8],
-            Material::Steam => [200, 200, 200u8],
-            Material::Oil => [10, 10, 10u8],
+            Material::Air => Color::rgb_u8(240, 248, 255u8),
+            Material::Bedrock => Color::rgb_u8(50, 50, 50u8),
+            Material::Sand => Color::rgb_u8(194, 178, 128u8),
+            Material::Water => Color::rgb_u8(28, 107, 160u8),
+            Material::Fire => Color::rgb_u8(255, 165, 0u8),
+            Material::Smoke => Color::rgb_u8(160, 160, 160u8),
+            Material::Wood => Color::rgb_u8(160, 82, 45u8),
+            Material::Steam => Color::rgb_u8(230, 230, 230u8),
+            Material::Oil => Color::rgb_u8(40, 40, 0u8),
         })
     }
 }
@@ -224,22 +230,29 @@ impl Default for MaterialReactions {
             (
                 (Material::Water, Material::Fire),
                 Reaction {
-                    probability: 10,
+                    probability: 1000,
                     product_material: Material::Steam,
                 },
             ),
             (
                 (Material::Wood, Material::Fire),
                 Reaction {
-                    probability: 15,
+                    probability: 1500,
                     product_material: Material::Fire,
                 },
             ),
             (
                 (Material::Oil, Material::Fire),
                 Reaction {
-                    probability: 40,
+                    probability: 4000,
                     product_material: Material::Fire,
+                },
+            ),
+            (
+                (Material::Smoke, Material::Air),
+                Reaction {
+                    probability: 5,
+                    product_material: Material::Air,
                 },
             ),
         ]))
