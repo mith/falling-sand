@@ -9,3 +9,4 @@
 .direnv/
 traces/
 trace-*
+.pre-commit-config.yaml
