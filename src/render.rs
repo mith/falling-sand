@@ -16,7 +16,7 @@ use bevy::{
             BindGroup, BindGroupEntries, BindGroupLayout, BindGroupLayoutEntry, BindingType,
             CachedComputePipelineId, CachedPipelineState, ComputePassDescriptor,
             ComputePipelineDescriptor, PipelineCache, ShaderStages, StorageTextureAccess,
-            TextureFormat, TextureViewDimension,
+            TextureFormat, TextureSampleType, TextureViewDimension,
         },
         renderer::RenderDevice,
         settings::WgpuFeatures,
@@ -145,20 +145,20 @@ impl FromWorld for FallingSandPipeline {
                 BindGroupLayoutEntry {
                     binding: 0,
                     visibility: ShaderStages::COMPUTE,
-                    ty: BindingType::StorageTexture {
-                        access: StorageTextureAccess::ReadOnly,
-                        format: TextureFormat::R32Uint,
+                    ty: BindingType::Texture {
+                        sample_type: TextureSampleType::Uint,
                         view_dimension: TextureViewDimension::D2,
+                        multisampled: false,
                     },
                     count: NonZeroU32::new(MAX_TEXTURE_COUNT as u32),
                 },
                 BindGroupLayoutEntry {
                     binding: 1,
                     visibility: ShaderStages::COMPUTE,
-                    ty: BindingType::StorageTexture {
-                        access: StorageTextureAccess::ReadOnly,
-                        format: TextureFormat::Rgba8Unorm,
+                    ty: BindingType::Texture {
+                        sample_type: TextureSampleType::Float { filterable: false },
                         view_dimension: TextureViewDimension::D1,
+                        multisampled: false,
                     },
                     count: None,
                 },
@@ -167,7 +167,7 @@ impl FromWorld for FallingSandPipeline {
                     visibility: ShaderStages::COMPUTE,
                     ty: BindingType::StorageTexture {
                         access: StorageTextureAccess::WriteOnly,
-                        format: TextureFormat::Rgba8Unorm,
+                        format: TextureFormat::Rgba32Float,
                         view_dimension: TextureViewDimension::D2,
                     },
                     count: NonZeroU32::new(MAX_TEXTURE_COUNT as u32),

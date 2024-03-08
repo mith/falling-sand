@@ -3,6 +3,7 @@ use bevy::{
     ecs::{
         component::Component,
         entity::Entity,
+        query::With,
         system::{Commands, Query, Res, ResMut},
     },
     hierarchy::DespawnRecursiveExt,
@@ -35,10 +36,10 @@ pub fn extract(
     render_device: Res<RenderDevice>,
     render_queue: Res<RenderQueue>,
     mut texture_cache: ResMut<TextureCache>,
-    extracted_chunks_query: Query<(Entity, &ExtractedChunkUpdate)>,
+    extracted_chunks_query: Query<Entity, With<ExtractedChunkUpdate>>,
     images: Res<RenderAssets<Image>>,
 ) {
-    for (entity, _) in extracted_chunks_query.iter() {
+    for entity in extracted_chunks_query.iter() {
         commands.entity(entity).despawn_recursive();
     }
     let extracted_chunks = chunk_query
@@ -61,7 +62,7 @@ pub fn extract(
                 sample_count: 1,
                 dimension: TextureDimension::D2,
                 format: TextureFormat::R32Uint,
-                usage: TextureUsages::COPY_DST | TextureUsages::STORAGE_BINDING,
+                usage: TextureUsages::COPY_DST | TextureUsages::TEXTURE_BINDING,
                 view_formats: &[TextureFormat::R32Uint],
             };
             let format_size = descriptor.format.pixel_size();
@@ -93,7 +94,6 @@ pub fn extract(
 
             Some(ExtractedChunkUpdate {
                 materials_texture: material_grid_texture,
-
                 color_texture: color_texture_view,
             })
         })

@@ -1,6 +1,7 @@
 use std::time::Duration;
 
 use bevy::ecs::system::SystemParam;
+
 use bevy::{prelude::*, render::render_asset::RenderAssetUsages, utils::HashSet};
 
 use bevy::render::extract_resource::{ExtractResource, ExtractResourcePlugin};
@@ -357,8 +358,7 @@ fn create_chunk_images(
         TextureFormat::R32Uint,
         RenderAssetUsages::MAIN_WORLD | RenderAssetUsages::RENDER_WORLD,
     );
-    grid_image.texture_descriptor.usage =
-        TextureUsages::COPY_DST | TextureUsages::STORAGE_BINDING | TextureUsages::TEXTURE_BINDING;
+    grid_image.texture_descriptor.usage = TextureUsages::COPY_DST | TextureUsages::STORAGE_BINDING;
     grid_image.texture_descriptor.label = Some("chunk_texture");
 
     grid_image.data.copy_from_slice(cast_slice(
@@ -373,8 +373,8 @@ fn create_chunk_images(
             depth_or_array_layers: 1,
         },
         TextureDimension::D2,
-        &initial_color.as_rgba_u8(),
-        TextureFormat::Rgba8Unorm,
+        &cast_slice(&initial_color.as_linear_rgba_f32()),
+        TextureFormat::Rgba32Float,
         RenderAssetUsages::RENDER_WORLD,
     );
     render_target.texture_descriptor.usage =
@@ -401,11 +401,10 @@ fn create_color_map_image(material_colors: &MaterialColor) -> Image {
         },
         TextureDimension::D1,
         material_colors_vec,
-        TextureFormat::Rgba8Unorm,
+        TextureFormat::Rgba8UnormSrgb,
         RenderAssetUsages::RENDER_WORLD,
     );
-    color_map_image.texture_descriptor.usage =
-        TextureUsages::STORAGE_BINDING | TextureUsages::TEXTURE_BINDING;
+    color_map_image.texture_descriptor.usage = TextureUsages::TEXTURE_BINDING;
     color_map_image.texture_descriptor.label = Some("color_map_texture");
     color_map_image
 }
