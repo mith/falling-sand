@@ -6,7 +6,6 @@ use bevy::{
     prelude::{Deref, DerefMut},
 };
 use rand::rngs::StdRng;
-use tracing::info;
 
 use crate::{
     material::Material,

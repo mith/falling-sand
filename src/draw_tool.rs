@@ -33,7 +33,7 @@ use crate::{
     chunk::Chunk,
     chunk_positions::{update_chunk_positions, ChunkPositions},
     cursor_world_position::CursorWorldPosition,
-    falling_sand::{ChunkCreationParams, FallingSandCleanSet, FallingSandSet, FallingSandSettings},
+    falling_sand::{ChunkCreationParams, FallingSandSet, FallingSandSettings},
     falling_sand_grid::FallingSandGridQuery,
     hovering_ui::{HoveringUiSet, UiFocused},
     material::{Material, MaterialColor, MaterialIterator},
