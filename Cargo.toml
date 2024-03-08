@@ -21,6 +21,10 @@ debug-assertions = true
 [profile.dev-opt.package."*"]
 opt-level = 3
 
+[features]
+parallel = ["ndarray/rayon"]
+webgpu = ["bevy/webgpu"]
+
 [dependencies.bevy]
 version = "0.13"
 default-features = false

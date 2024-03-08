@@ -82,6 +82,7 @@
               CARGO_BUILD_TARGET = target;
               CARGO_PROFILE = "release";
               RUSTFLAGS = "--cfg=web_sys_unstable_apis";
+              cargoExtraArgs = "--features=webgpu";
               inherit nativeBuildInputs;
               doCheck = false;
             };

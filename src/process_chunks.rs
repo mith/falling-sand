@@ -6,10 +6,11 @@ use bevy::{
     log::info_span,
     math::IVec2,
 };
-use ndarray::{
-    parallel::prelude::{IntoParallelIterator, ParallelIterator},
-    Array2,
-};
+
+#[cfg(feature = "parallel")]
+use ndarray::parallel::prelude::{IntoParallelIterator, ParallelIterator};
+
+use ndarray::Array2;
 
 use crate::{
     active_chunks::ActiveChunks,
@@ -64,7 +65,13 @@ where
     grid.active_chunks().passes().iter().for_each(|chunk_set| {
         let span = info_span!("process_chunks_pass");
         let _guard = span.enter();
-        chunk_set.into_par_iter().for_each(|&center_chunk_pos| {
+
+        #[cfg(feature = "parallel")]
+        let iter = chunk_set.into_par_iter();
+        #[cfg(not(feature = "parallel"))]
+        let iter = chunk_set.iter();
+
+        iter.for_each(|&center_chunk_pos| {
             let span = info_span!("process_chunks_task");
             let _guard = span.enter();
             let neighborhood = grid.get_neighborhood(center_chunk_pos);
@@ -83,11 +90,17 @@ where
     let span = info_span!("process_chunks_dense");
     let _guard = span.enter();
     let active_chunks = grid.active_chunks().iter().collect::<Vec<_>>();
-    active_chunks.into_par_iter().for_each(|&chunk_position| {
+
+    #[cfg(feature = "parallel")]
+    let iter = active_chunks.into_par_iter();
+    #[cfg(not(feature = "parallel"))]
+    let iter = active_chunks.iter();
+
+    iter.for_each(|&chunk_position| {
         let span = info_span!("process_chunks_dense_task");
         let _guard = span.enter();
-        let chunk = grid.get_chunk_at(chunk_position);
+        let chunk = grid.get_chunk_at(*chunk_position);
         let mut chunk_data = chunk.write().unwrap();
-        operation(chunk_position, &mut chunk_data);
+        operation(*chunk_position, &mut chunk_data);
     });
 }

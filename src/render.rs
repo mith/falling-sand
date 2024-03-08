@@ -1,4 +1,4 @@
-use std::{borrow::Cow, num::NonZeroU32, process::exit};
+use std::{borrow::Cow, num::NonZeroU32};
 
 use bevy::{
     app::{App, Plugin},
@@ -25,7 +25,7 @@ use bevy::{
     },
 };
 use itertools::Itertools;
-use tracing::{error, info, info_span};
+use tracing::{info, info_span};
 
 use crate::falling_sand::FallingSandSettings;
 
@@ -61,20 +61,22 @@ impl Plugin for FallingSandRenderPlugin {
 
         let render_device = render_app.world.resource::<RenderDevice>();
 
-        // Check if the device support the required feature. If not, exit the example.
-        // In a real application, you should setup a fallback for the missing feature
-        if !render_device
-            .features()
-            .contains(WgpuFeatures::SAMPLED_TEXTURE_AND_STORAGE_BUFFER_ARRAY_NON_UNIFORM_INDEXING)
-        {
-            error!(
+        let bindless_supported = bindless_supported(render_device);
+
+        if !bindless_supported {
+            info!(
                 "Render device doesn't support feature \
 SAMPLED_TEXTURE_AND_STORAGE_BUFFER_ARRAY_NON_UNIFORM_INDEXING, \
 which is required for texture binding arrays"
             );
-            exit(1);
         }
     }
+}
+
+fn bindless_supported(render_device: &RenderDevice) -> bool {
+    render_device
+        .features()
+        .contains(WgpuFeatures::SAMPLED_TEXTURE_AND_STORAGE_BUFFER_ARRAY_NON_UNIFORM_INDEXING)
 }
 
 #[derive(Resource, Clone, ExtractResource, Default)]
@@ -97,7 +99,7 @@ fn prepare_bind_group(
     image_assets: Res<RenderAssets<Image>>,
     falling_sand_images: Res<FallingSandImages>,
     extracted_chunks: Query<&ExtractedChunkUpdate>,
-    mut falling_sand_imgages_bind_groups: ResMut<FallingSandImagesBindGroups>,
+    mut falling_sand_images_bind_groups: ResMut<FallingSandImagesBindGroups>,
     render_device: Res<RenderDevice>,
 ) {
     let color_map_texture = &image_assets
@@ -105,40 +107,58 @@ fn prepare_bind_group(
         .unwrap()
         .texture_view;
 
-    falling_sand_imgages_bind_groups.0.clear();
+    falling_sand_images_bind_groups.0.clear();
 
-    for chunks in &extracted_chunks.iter().chunks(MAX_TEXTURE_COUNT) {
-        let (grid_textures, color_textures): (Vec<_>, Vec<_>) = chunks.fold(
-            (
-                Vec::with_capacity(MAX_TEXTURE_COUNT),
-                Vec::with_capacity(MAX_TEXTURE_COUNT),
-            ),
-            |(mut grid_textures, mut color_textures), images| {
-                grid_textures.push(&*images.materials_texture.default_view);
-                color_textures.push(&*images.color_texture);
-                (grid_textures, color_textures)
-            },
-        );
+    if bindless_supported(&*render_device) {
+        let extracted_chunks: Vec<_> = extracted_chunks.iter().collect();
 
-        let bind_group = render_device.create_bind_group(
-            "bindless_grid_material_bind_group",
-            &pipeline.texture_bind_group_layout,
-            &BindGroupEntries::sequential((
-                &grid_textures[..],
-                color_map_texture,
-                &color_textures[..],
-            )),
-        );
+        for chunks in &extracted_chunks.iter().chunks(MAX_TEXTURE_COUNT) {
+            let (grid_textures, color_textures): (Vec<_>, Vec<_>) = chunks.fold(
+                (
+                    Vec::with_capacity(MAX_TEXTURE_COUNT),
+                    Vec::with_capacity(MAX_TEXTURE_COUNT),
+                ),
+                |(mut grid_textures, mut color_textures), images| {
+                    grid_textures.push(&*images.materials_texture.default_view);
+                    color_textures.push(&*images.color_texture);
+                    (grid_textures, color_textures)
+                },
+            );
 
-        falling_sand_imgages_bind_groups
-            .0
-            .push((grid_textures.len() as u32, bind_group));
+            let bind_group = render_device.create_bind_group(
+                "bindless_grid_material_bind_group",
+                &pipeline.texture_bind_group_layout,
+                &BindGroupEntries::sequential((
+                    &grid_textures[..],
+                    color_map_texture,
+                    &color_textures[..],
+                )),
+            );
+
+            falling_sand_images_bind_groups
+                .0
+                .push((grid_textures.len() as u32, bind_group));
+        }
+    } else {
+        for chunk_update in extracted_chunks.iter() {
+            let grid_texture = &chunk_update.materials_texture.default_view;
+            let color_texture = &chunk_update.color_texture;
+
+            let bind_group = render_device.create_bind_group(
+                "grid_material_bind_group",
+                &pipeline.texture_bind_group_layout,
+                &BindGroupEntries::sequential((grid_texture, color_map_texture, color_texture)),
+            );
+
+            falling_sand_images_bind_groups.0.push((1, bind_group));
+        }
     }
 }
 
 impl FromWorld for FallingSandPipeline {
     fn from_world(world: &mut World) -> Self {
         let render_device = world.resource::<RenderDevice>();
+        let bindless_supported = bindless_supported(render_device);
         let texture_bind_group_layout = render_device.create_bind_group_layout(
             "bindless_grid_material_bind_group_layout",
             &[
@@ -150,7 +170,11 @@ impl FromWorld for FallingSandPipeline {
                         view_dimension: TextureViewDimension::D2,
                         multisampled: false,
                     },
-                    count: NonZeroU32::new(MAX_TEXTURE_COUNT as u32),
+                    count: if bindless_supported {
+                        NonZeroU32::new(MAX_TEXTURE_COUNT as u32)
+                    } else {
+                        None
+                    },
                 },
                 BindGroupLayoutEntry {
                     binding: 1,
@@ -170,22 +194,32 @@ impl FromWorld for FallingSandPipeline {
                         format: TextureFormat::Rgba32Float,
                         view_dimension: TextureViewDimension::D2,
                     },
-                    count: NonZeroU32::new(MAX_TEXTURE_COUNT as u32),
+                    count: if bindless_supported {
+                        NonZeroU32::new(MAX_TEXTURE_COUNT as u32)
+                    } else {
+                        None
+                    },
                 },
             ],
         );
+
         let shader = world
             .resource::<AssetServer>()
             .load("shaders/grid_to_texture.wgsl");
 
         let pipeline_cache = world.resource_mut::<PipelineCache>();
+        let shader_defs = if bindless_supported {
+            vec!["BINDLESS".into()]
+        } else {
+            vec![]
+        };
         let render_grid_pipeline =
             pipeline_cache.queue_compute_pipeline(ComputePipelineDescriptor {
                 label: Some("render_chunk_pipeline".into()),
                 layout: vec![texture_bind_group_layout.clone()],
                 push_constant_ranges: vec![],
                 shader,
-                shader_defs: vec![],
+                shader_defs,
                 entry_point: Cow::from("render_grid"),
             });
 
@@ -264,7 +298,7 @@ impl render_graph::Node for FallingSandNode {
                     pass.set_pipeline(render_pipeline);
 
                     let size = (self.size.0 as u32, self.size.1 as u32);
-                    let workgroup_size = 8;
+                    let workgroup_size = 32;
                     pass.dispatch_workgroups(
                         size.0 / workgroup_size,
                         size.1 / workgroup_size,
