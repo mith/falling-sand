@@ -44,7 +44,6 @@ features = [
     "tonemapping_luts",
     "default_font",
     "wayland",
-    "trace"
 ]
 
 [dependencies]
