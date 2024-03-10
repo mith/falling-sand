@@ -176,6 +176,13 @@
               postBuild = "wrapProgram $out/bin/${name} --prefix PATH : $out/bin";
             };
 
+          falling-sand-deps = crane-lib.buildDepsOnly {
+            src = falling-sand-src;
+            cargoExtraArgs = "--features=parallel";
+            inherit buildInputs;
+            inherit nativeBuildInputs;
+          };
+
           default = self.packages.${system}.falling-sand;
         };
 
@@ -190,6 +197,21 @@
 
         checks = {
           inherit (self.packages.${system}) falling-sand-bin;
+
+          cargo-nextest = crane-lib.cargoNextest {
+            src = falling-sand-src;
+            cargoArtifacts = self.packages.${system}.falling-sand-deps;
+            inherit buildInputs;
+            inherit nativeBuildInputs;
+          };
+
+          cargo-clippy = crane-lib.cargoClippy {
+            src = falling-sand-src;
+            cargoArtifacts = self.packages.${system}.falling-sand-deps;
+            inherit buildInputs;
+            inherit nativeBuildInputs;
+          };
+
           pre-commit-check = inputs.pre-commit-hooks.lib.${system}.run {
             src = ./.;
             hooks = {
