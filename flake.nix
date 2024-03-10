@@ -48,6 +48,21 @@
           clang
           pkg-config
         ];
+        build-dist = {
+          name,
+          bin,
+          executable,
+        }:
+          pkgs.stdenv.mkDerivation {
+            inherit name;
+            phases = ["installPhase"];
+            installPhase = ''
+              mkdir -p $out
+              cp ${bin}/bin/${executable} $out/${executable}
+              cp -r ${self.packages.${system}.falling-sand-assets}/assets $out/assets
+              cp -r ${self.packages.${system}.falling-sand-license}/* $out/
+            '';
+          };
       in {
         packages = {
           falling-sand-bin = crane-lib.buildPackage {
@@ -146,26 +161,16 @@
               ];
             };
 
-          falling-sand = pkgs.stdenv.mkDerivation {
+          falling-sand = build-dist {
             name = "falling-sand";
-            phases = ["installPhase"];
-            installPhase = ''
-              mkdir -p $out
-              cp ${self.packages.${system}.falling-sand-bin}/bin/falling-sand $out/falling-sand
-              cp -r ${self.packages.${system}.falling-sand-assets}/assets $out/assets
-              cp -r ${self.packages.${system}.falling-sand-license}/* $out/
-            '';
+            bin = self.packages.${system}.falling-sand-bin;
+            executable = "falling-sand";
           };
 
-          falling-sand-win64 = pkgs.stdenv.mkDerivation {
+          falling-sand-win64 = build-dist {
             name = "falling-sand-win64";
-            phases = ["installPhase"];
-            installPhase = ''
-              mkdir -p $out
-              cp ${self.packages.${system}.falling-sand-win64-bin}/bin/falling-sand.exe $out/falling-sand.exe
-              cp -r ${self.packages.${system}.falling-sand-assets}/assets $out/assets
-              cp -r ${self.packages.${system}.falling-sand-license}/* $out/
-            '';
+            bin = self.packages.${system}.falling-sand-win64-bin;
+            executable = "falling-sand.exe";
           };
         };
 
@@ -184,13 +189,6 @@
               alejandra.enable = true;
               statix.enable = true;
               rustfmt.enable = true;
-              clippy = {
-                enable = false;
-                entry = let
-                  rust = rust.withComponents ["clippy"];
-                in
-                  pkgs.lib.mkForce "${rust}/bin/cargo-clippy clippy";
-              };
             };
           };
         };
