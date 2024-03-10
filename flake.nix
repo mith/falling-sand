@@ -4,15 +4,12 @@
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     flake-utils.url = "github:numtide/flake-utils";
-    fenix = {
-      url = "github:nix-community/fenix";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
-    crane = {
-      url = "github:ipetkov/crane";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
+    fenix.url = "github:nix-community/fenix";
+    crane.url = "github:ipetkov/crane";
     pre-commit-hooks.url = "github:cachix/pre-commit-hooks.nix";
+
+    fenix.inputs.nixpkgs.follows = "nixpkgs";
+    crane.inputs.nixpkgs.follows = "nixpkgs";
   };
 
   outputs = inputs @ {
@@ -47,6 +44,25 @@
           clang
           pkg-config
         ];
+        cross-build-bin = {
+          target,
+          buildArgs,
+        }: let
+          toolchain = with fenix.packages.${system};
+            combine [
+              stable.rustc
+              stable.cargo
+              targets.${target}.stable.rust-std
+            ];
+          craneLib = (crane.mkLib pkgs).overrideToolchain toolchain;
+        in
+          craneLib.buildPackage ({
+              src = falling-sand-src;
+              doCheck = false;
+              CARGO_BUILD_TARGET = target;
+              inherit nativeBuildInputs;
+            }
+            // buildArgs);
         pack-dist = {
           name,
           bin,
@@ -62,29 +78,9 @@
               cp -r ${self.packages.${system}.falling-sand-license}/* $out/
             '';
           };
-        cross-build-bin = {
-          target,
-          buildArgs,
-        }: let
-          toolchain = with fenix.packages.${system};
-            combine [
-              stable.rustc
-              stable.cargo
-              targets."${target}".stable.rust-std
-            ];
-          craneLib = (crane.mkLib pkgs).overrideToolchain toolchain;
-        in
-          craneLib.buildPackage ({
-              src = falling-sand-src;
-              doCheck = false;
-              CARGO_BUILD_TARGET = target;
-              inherit nativeBuildInputs;
-            }
-            // buildArgs);
       in {
         packages = {
           falling-sand-bin = crane-lib.buildPackage {
-            name = "falling-sand-bin";
             src = falling-sand-src;
             cargoExtraArgs = "--features=parallel";
             inherit buildInputs;
@@ -161,6 +157,7 @@
               wasm-opt -Oz -o $out/falling-sand_bg.wasm falling-sand_bg.wasm
               cp $src/* $out/
               cp -r ${self.packages.${system}.falling-sand-assets}/assets $out/assets
+              cp -r ${self.packages.${system}.falling-sand-license}/* $out/
             '';
           };
 
@@ -192,7 +189,7 @@
           };
         };
 
-        devShell = pkgs.mkShell {
+        devShell = crane-lib.devShell {
           shellHook = ''
             export LD_LIBRARY_PATH="$LD_LIBRARY_PATH:${pkgs.lib.makeLibraryPath buildInputs}"
             ${self.checks.${system}.pre-commit-check.shellHook}
@@ -200,7 +197,6 @@
           inputsFrom = [self.packages.${system}.falling-sand-bin];
           nativeBuildInputs = with pkgs;
             [
-              (rust.withComponents ["cargo" "rustc" "rust-src" "rustfmt" "clippy"])
               rust-analyzer
               lldb
               nil

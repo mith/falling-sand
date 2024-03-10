@@ -1,0 +1,17 @@
+name: Test, Build & Release
+
+on:
+  push:
+    branches: ["master"]
+
+jobs:
+  test:
+    uses: ./.github/workflows/test.yml
+
+  build-windows:
+    needs: test
+    uses: ./.github/workflows/build-windows.yml
+
+  deploy-to-pages:
+    needs: test
+    uses: ./.github/workflows/deploy-to-pages.yml

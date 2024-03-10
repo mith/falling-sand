@@ -1,13 +1,10 @@
 name: Test
+
 on:
-  push:
-    branches: ["master"]
+  workflow_call:
 
 permissions:
   contents: read
-
-concurrency:
-  group: "test"
 
 jobs:
   test:
@@ -19,4 +16,3 @@ jobs:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
       - uses: DeterminateSystems/magic-nix-cache-action@main
       - run: nix flake check
-
