@@ -29,7 +29,7 @@
         pkgs = nixpkgs.legacyPackages."${system}";
         rust = fenix.packages.${system}.stable;
         crane-lib = crane.lib."${system}".overrideToolchain rust.toolchain;
-        falling-sand-src = crane-lib.cleanCargoSource ./.;
+        falling-sand-src = crane-lib.cleanCargoSource (crane-lib.path ./.);
         buildInputs = with pkgs; [
           libxkbcommon
           alsa-lib
@@ -53,16 +53,17 @@
           falling-sand-bin = crane-lib.buildPackage {
             name = "falling-sand-bin";
             src = falling-sand-src;
+            cargoExtraArgs = "--features=parallel";
             inherit buildInputs;
             inherit nativeBuildInputs;
           };
-          falling-sand = pkgs.stdenv.mkDerivation {
-            name = "falling-sand";
+
+          falling-sand-assets = pkgs.stdenv.mkDerivation {
+            name = "falling-sand-assets";
             src = ./assets;
             phases = ["unpackPhase" "installPhase"];
             installPhase = ''
               mkdir -p $out
-              cp ${self.packages.${system}.falling-sand-bin}/bin/falling-sand $out/falling-sand
               cp -r $src $out/assets
             '';
           };
@@ -108,6 +109,52 @@
           falling-sand-server = pkgs.writeShellScriptBin "run-falling-sand-server" ''
             ${pkgs.simple-http-server}/bin/simple-http-server -i -c=html,wasm,ttf,js -- ${self.packages.${system}.falling-sand-web}/
           '';
+
+          falling-sand-win64-bin = let
+            target = "x86_64-pc-windows-gnu";
+            toolchain = with fenix.packages.${system};
+              combine [
+                stable.rustc
+                stable.cargo
+                targets."${target}".stable.rust-std
+              ];
+            craneLib = (crane.mkLib pkgs).overrideToolchain toolchain;
+            falling-sand-src = craneLib.cleanCargoSource (craneLib.path ./.);
+          in
+            craneLib.buildPackage {
+              src = falling-sand-src;
+              strictDeps = true;
+              doCheck = false;
+              CARGO_BUILD_TARGET = target;
+              cargoExtraArgs = "--features=parallel";
+
+              inherit nativeBuildInputs;
+
+              depsBuildBuild = with pkgs; [
+                pkgsCross.mingwW64.stdenv.cc
+                pkgsCross.mingwW64.windows.pthreads
+              ];
+            };
+
+          falling-sand = pkgs.stdenv.mkDerivation {
+            name = "falling-sand";
+            phases = ["installPhase"];
+            installPhase = ''
+              mkdir -p $out
+              cp ${self.packages.${system}.falling-sand-bin}/bin/falling-sand $out/falling-sand
+              cp -r ${self.packages.${system}.falling-sand-assets}/assets $out/assets
+            '';
+          };
+
+          falling-sand-win64 = pkgs.stdenv.mkDerivation {
+            name = "falling-sand-win64";
+            phases = ["installPhase"];
+            installPhase = ''
+              mkdir -p $out
+              cp ${self.packages.${system}.falling-sand-win64-bin}/bin/falling-sand.exe $out/falling-sand.exe
+              cp -r ${self.packages.${system}.falling-sand-assets}/assets $out/assets
+            '';
+          };
         };
 
         defaultPackage = self.packages.${system}.falling-sand;

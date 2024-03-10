@@ -94,13 +94,13 @@ where
     #[cfg(feature = "parallel")]
     let iter = active_chunks.into_par_iter();
     #[cfg(not(feature = "parallel"))]
-    let iter = active_chunks.iter();
+    let iter = active_chunks.iter().copied();
 
     iter.for_each(|&chunk_position| {
         let span = info_span!("process_chunks_dense_task");
         let _guard = span.enter();
-        let chunk = grid.get_chunk_at(*chunk_position);
+        let chunk = grid.get_chunk_at(chunk_position);
         let mut chunk_data = chunk.write().unwrap();
-        operation(*chunk_position, &mut chunk_data);
+        operation(chunk_position, &mut chunk_data);
     });
 }
