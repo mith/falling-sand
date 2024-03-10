@@ -44,10 +44,7 @@
           clang
           pkg-config
         ];
-        cross-build-bin = {
-          target,
-          buildArgs,
-        }: let
+        cross-build-bin = args @ {target, ...}: let
           toolchain = with fenix.packages.${system};
             combine [
               stable.rustc
@@ -55,14 +52,17 @@
               targets.${target}.stable.rust-std
             ];
           craneLib = (crane.mkLib pkgs).overrideToolchain toolchain;
+          cleanedArgs = builtins.removeAttrs args ["target"];
         in
-          craneLib.buildPackage ({
+          craneLib.buildPackage (
+            cleanedArgs
+            // {
               src = falling-sand-src;
               doCheck = false;
               CARGO_BUILD_TARGET = target;
               inherit nativeBuildInputs;
             }
-            // buildArgs);
+          );
         pack-dist = {
           name,
           bin,
@@ -89,22 +89,18 @@
 
           falling-sand-bin-wasm = cross-build-bin {
             target = "wasm32-unknown-unknown";
-            buildArgs = {
-              RUSTFLAGS = "--cfg=web_sys_unstable_apis";
-              cargoExtraArgs = "--features=webgpu";
-            };
+            RUSTFLAGS = "--cfg=web_sys_unstable_apis";
+            cargoExtraArgs = "--features=webgpu";
           };
 
           falling-sand-bin-win64 = cross-build-bin {
             target = "x86_64-pc-windows-gnu";
-            buildArgs = {
-              strictDeps = true;
-              cargoExtraArgs = "--features=parallel";
-              depsBuildBuild = with pkgs; [
-                pkgsCross.mingwW64.stdenv.cc
-                pkgsCross.mingwW64.windows.pthreads
-              ];
-            };
+            strictDeps = true;
+            cargoExtraArgs = "--features=parallel";
+            depsBuildBuild = with pkgs; [
+              pkgsCross.mingwW64.stdenv.cc
+              pkgsCross.mingwW64.windows.pthreads
+            ];
           };
 
           falling-sand-assets = pkgs.stdenvNoCC.mkDerivation {
