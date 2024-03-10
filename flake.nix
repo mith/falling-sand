@@ -68,6 +68,16 @@
             '';
           };
 
+          falling-sand-license = pkgs.stdenv.mkDerivation {
+            name = "falling-sand-license";
+            src = ./.;
+            phases = ["unpackPhase" "installPhase"];
+            installPhase = ''
+              mkdir -p $out
+              cp -r $src/LICENSE.txt $src/COPYING $out/
+            '';
+          };
+
           falling-sand-wasm = let
             target = "wasm32-unknown-unknown";
             toolchain = with fenix.packages.${system};
@@ -143,6 +153,7 @@
               mkdir -p $out
               cp ${self.packages.${system}.falling-sand-bin}/bin/falling-sand $out/falling-sand
               cp -r ${self.packages.${system}.falling-sand-assets}/assets $out/assets
+              cp -r ${self.packages.${system}.falling-sand-license}/* $out/
             '';
           };
 
@@ -153,6 +164,7 @@
               mkdir -p $out
               cp ${self.packages.${system}.falling-sand-win64-bin}/bin/falling-sand.exe $out/falling-sand.exe
               cp -r ${self.packages.${system}.falling-sand-assets}/assets $out/assets
+              cp -r ${self.packages.${system}.falling-sand-license}/* $out/
             '';
           };
         };

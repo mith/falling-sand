@@ -19,7 +19,7 @@ jobs:
     - uses: cachix/install-nix-action@v26
       with:
         github_access_token: ${{ secrets.GITHUB_TOKEN }}
-    - uses: DeterminateSystems/magic-nix-cache-action@v2
+    - uses: DeterminateSystems/magic-nix-cache-action@main
     - run: nix build .#falling-sand-win64 -L
     - uses: actions/upload-artifact@v4
       with:
