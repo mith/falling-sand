@@ -46,9 +46,6 @@ fn main() {
         DrawToolPlugin,
         TimeControlPlugin,
     ))
-    .insert_resource(ToolState {
-        draw_type: Material::Sand,
-    })
     .add_systems(Startup, setup)
     .run();
 }

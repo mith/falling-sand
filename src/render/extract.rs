@@ -89,7 +89,7 @@ pub fn extract(
                 },
             );
 
-            let color_texture_image = images.get(chunk_image).unwrap();
+            let color_texture_image = images.get(chunk_image)?;
             let color_texture_view = color_texture_image.texture_view.clone();
 
             Some(ExtractedChunkUpdate {

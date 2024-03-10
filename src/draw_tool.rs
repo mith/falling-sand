@@ -5,7 +5,8 @@ use bevy::{
         change_detection::DetectChanges,
         component::Component,
         entity::Entity,
-        query::Changed,
+        event::EventReader,
+        query::{Changed, With},
         schedule::{
             apply_deferred,
             common_conditions::{not, resource_exists},
@@ -14,11 +15,15 @@ use bevy::{
         system::{Commands, Local, Query, Res, ResMut, Resource},
     },
     hierarchy::BuildChildren,
-    input::{keyboard::KeyCode, mouse::MouseButton, ButtonInput},
+    input::{
+        keyboard::KeyCode,
+        mouse::{MouseButton, MouseWheel},
+        ButtonInput,
+    },
     math::{IVec2, Vec2},
     prelude::{default, Color},
     reflect::Reflect,
-    text::TextStyle,
+    text::{Text, TextSection, TextStyle},
     time::{Time, Timer},
     ui::{
         node_bundles::{ButtonBundle, NodeBundle, TextBundle},
@@ -57,6 +62,10 @@ struct DrawToolFixedUpdateSet;
 impl bevy::app::Plugin for DrawToolPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<CursorTilePosition>()
+            .insert_resource(ToolState {
+                draw_type: Material::Sand,
+                brush_size: 1,
+            })
             .add_systems(Startup, setup_ui)
             .add_systems(
                 Update,
@@ -84,7 +93,11 @@ impl bevy::app::Plugin for DrawToolPlugin {
             )
             .add_systems(
                 Update,
-                (switch_tool_system, material_button_system)
+                (
+                    switch_tool_system,
+                    material_button_system,
+                    brush_size_system,
+                )
                     .before(DrawToolUpdateSet)
                     .in_set(DrawToolPickerSet)
                     .in_set(DrawToolSet),
@@ -95,10 +108,14 @@ impl bevy::app::Plugin for DrawToolPlugin {
 #[derive(Component)]
 struct MaterialButton(Material);
 
+#[derive(Component)]
+struct BrushSizeText;
+
 fn setup_ui(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
     material_colors: Res<MaterialColor>,
+    tool_state: Res<ToolState>,
 ) {
     commands
         .spawn((
@@ -162,6 +179,28 @@ fn setup_ui(
                         ));
                     });
             }
+
+            parent.spawn((
+                BrushSizeText,
+                TextBundle::from_sections([
+                    TextSection::new(
+                        "Brush size:",
+                        TextStyle {
+                            font: asset_server.load("fonts/PublicPixel-z84yD.ttf"),
+                            color: Color::BLACK,
+                            ..default()
+                        },
+                    ),
+                    TextSection::new(
+                        tool_state.brush_size.to_string(),
+                        TextStyle {
+                            font: asset_server.load("fonts/PublicPixel-z84yD.ttf"),
+                            color: Color::BLACK,
+                            ..default()
+                        },
+                    ),
+                ]),
+            ));
         });
 }
 
@@ -179,6 +218,7 @@ fn material_button_system(
 #[derive(Resource)]
 pub struct ToolState {
     pub draw_type: Material,
+    pub brush_size: u32,
 }
 
 fn switch_tool_system(
@@ -209,6 +249,28 @@ impl Default for DrawTimer {
     }
 }
 
+fn brush_size_system(
+    mut tool_state: ResMut<ToolState>,
+    mut mouse_wheel_events: EventReader<MouseWheel>,
+    keyboard_input: Res<ButtonInput<KeyCode>>,
+    mut brush_size_text_query: Query<&mut Text, With<BrushSizeText>>,
+) {
+    if !keyboard_input.pressed(KeyCode::ControlLeft) || mouse_wheel_events.is_empty() {
+        return;
+    }
+
+    let mut text = brush_size_text_query.single_mut();
+    for event in mouse_wheel_events.read() {
+        if event.y > 0. {
+            tool_state.brush_size += 1;
+        } else if event.y < 0. {
+            tool_state.brush_size = tool_state.brush_size.saturating_sub(1).max(1);
+        }
+
+        text.sections[1].value = tool_state.brush_size.to_string();
+    }
+}
+
 #[derive(Default)]
 struct LastDrawPosition(Option<IVec2>);
 
@@ -222,6 +284,7 @@ fn calculate_stroke(
     mut timer: Local<DrawTimer>,
     time: Res<Time>,
     mut last_draw_position: Local<LastDrawPosition>,
+    tool_state: Res<ToolState>,
 ) {
     if !mouse_button_input.pressed(MouseButton::Left) {
         last_draw_position.0 = None;
@@ -232,12 +295,29 @@ fn calculate_stroke(
 
     if timer.0.tick(time.delta()).just_finished() || cursor_tile_position.is_changed() {
         let start_pos = last_draw_position.0.unwrap_or(current_tile_pos);
-        if start_pos != current_tile_pos {
+
+        // Generate the line using Bresenham's algorithm
+        let line = if start_pos != current_tile_pos {
             let bresenham = Bresenham::new(start_pos.into(), current_tile_pos.into());
-            commands.spawn(Stroke(bresenham.map(Into::into).collect()));
+            bresenham.map(Into::into).collect::<Vec<IVec2>>()
         } else {
-            commands.spawn(Stroke(vec![current_tile_pos]));
+            vec![current_tile_pos]
+        };
+
+        let mut stroke_points = Vec::new();
+        for point in line.iter() {
+            for dx in 0..tool_state.brush_size {
+                for dy in 0..tool_state.brush_size {
+                    let adjusted_point = IVec2::new(
+                        point.x + dx as i32 - (tool_state.brush_size / 2) as i32,
+                        point.y + dy as i32 - (tool_state.brush_size / 2) as i32,
+                    );
+                    stroke_points.push(adjusted_point);
+                }
+            }
         }
+
+        commands.spawn(Stroke(stroke_points));
         last_draw_position.0 = Some(current_tile_pos);
     }
 }

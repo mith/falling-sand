@@ -29,9 +29,13 @@ impl Default for CameraSettings {
 fn camera_zoom(
     mut camera_query: Query<(&mut Transform, &mut OrthographicProjection)>,
     mut mouse_wheel_events: EventReader<MouseWheel>,
+    keyboard_input: Res<ButtonInput<KeyCode>>,
     window_query: Query<&Window, With<PrimaryWindow>>,
     camera_settings: Res<CameraSettings>,
 ) {
+    if keyboard_input.pressed(KeyCode::ControlLeft) {
+        return;
+    }
     let Ok(primary_window) = window_query.get_single() else {
         return;
     };
