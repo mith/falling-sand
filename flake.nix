@@ -53,7 +53,7 @@
           bin,
           executable,
         }:
-          pkgs.stdenv.mkDerivation {
+          pkgs.stdenvNoCC.mkDerivation {
             inherit name;
             phases = ["installPhase"];
             installPhase = ''
@@ -73,7 +73,7 @@
             inherit nativeBuildInputs;
           };
 
-          falling-sand-assets = pkgs.stdenv.mkDerivation {
+          falling-sand-assets = pkgs.stdenvNoCC.mkDerivation {
             name = "falling-sand-assets";
             src = ./assets;
             phases = ["unpackPhase" "installPhase"];
@@ -83,7 +83,7 @@
             '';
           };
 
-          falling-sand-license = pkgs.stdenv.mkDerivation {
+          falling-sand-license = pkgs.stdenvNoCC.mkDerivation {
             name = "falling-sand-license";
             src = ./.;
             phases = ["unpackPhase" "installPhase"];
@@ -113,7 +113,7 @@
               doCheck = false;
             };
 
-          falling-sand-web = pkgs.stdenv.mkDerivation {
+          falling-sand-web = pkgs.stdenvNoCC.mkDerivation {
             name = "falling-sand-web";
             src = ./.;
             nativeBuildInputs = [
