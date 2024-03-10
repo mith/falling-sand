@@ -196,6 +196,9 @@
               alejandra.enable = true;
               statix.enable = true;
               rustfmt.enable = true;
+              markdownlint.enable = true;
+              taplo.enable = true;
+              actionlint.enable = true;
             };
           };
         };

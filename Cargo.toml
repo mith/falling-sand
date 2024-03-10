@@ -30,25 +30,25 @@ webgpu = ["bevy/webgpu"]
 version = "0.13"
 default-features = false
 features = [
-    "animation",
-    "bevy_asset",
-    "bevy_audio",
-    "bevy_gilrs",
-    "bevy_scene",
-    "bevy_winit",
-    "bevy_core_pipeline",
-    "bevy_render",
-    "bevy_sprite",
-    "bevy_text",
-    "bevy_ui",
-    "multi-threaded",
-    "png",
-    "vorbis",
-    "x11",
-    "bevy_gizmos",
-    "tonemapping_luts",
-    "default_font",
-    "wayland",
+  "animation",
+  "bevy_asset",
+  "bevy_audio",
+  "bevy_gilrs",
+  "bevy_scene",
+  "bevy_winit",
+  "bevy_core_pipeline",
+  "bevy_render",
+  "bevy_sprite",
+  "bevy_text",
+  "bevy_ui",
+  "multi-threaded",
+  "png",
+  "vorbis",
+  "x11",
+  "bevy_gizmos",
+  "tonemapping_luts",
+  "default_font",
+  "wayland",
 ]
 
 [dependencies]
@@ -59,11 +59,11 @@ bytemuck = { version = "1.12.3", features = ["derive"] }
 # bevy-inspector-egui = "0.22.0"
 nix = { version = "0.27.1", features = ["process"] }
 half = { version = "2.3.1", features = [
-    "bytemuck",
-    "serde",
-    "num-traits",
-    "use-intrinsics",
-    "zerocopy",
+  "bytemuck",
+  "serde",
+  "num-traits",
+  "use-intrinsics",
+  "zerocopy",
 ] }
 line_drawing = "1.0.0"
 rand = "0.8.5"
@@ -71,11 +71,11 @@ itertools = "0.12.1"
 anymap3 = { version = "1.0.0", features = ["hashbrown"] }
 paste = "1.0.14"
 smallvec = { version = "1.13.1", features = [
-    "union",
-    "const_generics",
-    "const_new",
-    "serde",
-    "write",
+  "union",
+  "const_generics",
+  "const_new",
+  "serde",
+  "write",
 ] }
 morton-encoding = "2.0.1"
 quadtree_rs = "0.1.3"
