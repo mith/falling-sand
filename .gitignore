@@ -10,3 +10,4 @@
 traces/
 trace-*
 .pre-commit-config.yaml
+result
