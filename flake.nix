@@ -118,11 +118,13 @@
             src = pkgs.lib.sourceByRegex ./. [
               "LICENSE.txt"
               "COPYING"
+              "third-party.html"
             ];
             phases = ["unpackPhase" "installPhase"];
             installPhase = ''
               mkdir -p $out
-              cp -r $src/LICENSE.txt $src/COPYING $out/
+              cp -r $src/LICENSE.txt $src/COPYING $src/third-party.html $out/
+              mkdir -p src && touch src/main.rs
             '';
           };
 
@@ -160,6 +162,19 @@
           falling-sand-server = pkgs.writeShellScriptBin "run-falling-sand-server" ''
             ${pkgs.simple-http-server}/bin/simple-http-server -i -c=html,wasm,ttf,js -- ${self.packages.${system}.falling-sand-web}/
           '';
+
+          update-third-party-attribution = let
+            name = "update-third-party-attribution";
+            script = pkgs.writeShellScriptBin name ''
+              ${pkgs.cargo-about}/bin/cargo-about generate about.hbs > third-party.html
+            '';
+          in
+            pkgs.symlinkJoin {
+              inherit name;
+              paths = [script (rust.withComponents ["cargo" "rustc"])];
+              buildInputs = [pkgs.makeWrapper];
+              postBuild = "wrapProgram $out/bin/${name} --prefix PATH : $out/bin";
+            };
 
           default = self.packages.${system}.falling-sand;
         };
