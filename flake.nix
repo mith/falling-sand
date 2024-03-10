@@ -183,6 +183,7 @@
         defaultApp = self.apps.${system}.falling-sand;
 
         checks = {
+          inherit (self.packages.${system}) falling-sand-bin;
           pre-commit-check = inputs.pre-commit-hooks.lib.${system}.run {
             src = ./.;
             hooks = {
