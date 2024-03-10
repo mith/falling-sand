@@ -3,7 +3,6 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
-    nixpkgs-local.url = "github:mith/nixpkgs";
     flake-utils.url = "github:numtide/flake-utils";
     fenix = {
       url = "github:nix-community/fenix";
@@ -73,27 +72,7 @@
             inherit nativeBuildInputs;
           };
 
-          falling-sand-assets = pkgs.stdenvNoCC.mkDerivation {
-            name = "falling-sand-assets";
-            src = ./assets;
-            phases = ["unpackPhase" "installPhase"];
-            installPhase = ''
-              mkdir -p $out
-              cp -r $src $out/assets
-            '';
-          };
-
-          falling-sand-license = pkgs.stdenvNoCC.mkDerivation {
-            name = "falling-sand-license";
-            src = ./.;
-            phases = ["unpackPhase" "installPhase"];
-            installPhase = ''
-              mkdir -p $out
-              cp -r $src/LICENSE.txt $src/COPYING $out/
-            '';
-          };
-
-          falling-sand-wasm = let
+          falling-sand-bin-wasm = let
             target = "wasm32-unknown-unknown";
             toolchain = with fenix.packages.${system};
               combine [
@@ -113,29 +92,7 @@
               doCheck = false;
             };
 
-          falling-sand-web = pkgs.stdenvNoCC.mkDerivation {
-            name = "falling-sand-web";
-            src = ./.;
-            nativeBuildInputs = [
-              pkgs.wasm-bindgen-cli
-              pkgs.binaryen
-            ];
-            phases = ["unpackPhase" "installPhase"];
-            installPhase = ''
-              mkdir -p $out
-              wasm-bindgen --out-dir $out --out-name falling-sand --target web ${self.packages.${system}.falling-sand-wasm}/bin/falling-sand.wasm
-              mv $out/falling-sand_bg.wasm .
-              wasm-opt -Oz -o $out/falling-sand_bg.wasm falling-sand_bg.wasm
-              cp web/* $out/
-              cp -r assets $out/assets
-            '';
-          };
-
-          falling-sand-server = pkgs.writeShellScriptBin "run-falling-sand-server" ''
-            ${pkgs.simple-http-server}/bin/simple-http-server -i -c=html,wasm,ttf,js -- ${self.packages.${system}.falling-sand-web}/
-          '';
-
-          falling-sand-win64-bin = let
+          falling-sand-bin-win64 = let
             target = "x86_64-pc-windows-gnu";
             toolchain = with fenix.packages.${system};
               combine [
@@ -144,7 +101,6 @@
                 targets."${target}".stable.rust-std
               ];
             craneLib = (crane.mkLib pkgs).overrideToolchain toolchain;
-            falling-sand-src = craneLib.cleanCargoSource (craneLib.path ./.);
           in
             craneLib.buildPackage {
               src = falling-sand-src;
@@ -161,6 +117,29 @@
               ];
             };
 
+          falling-sand-assets = pkgs.stdenvNoCC.mkDerivation {
+            name = "falling-sand-assets";
+            src = ./assets;
+            phases = ["unpackPhase" "installPhase"];
+            installPhase = ''
+              mkdir -p $out
+              cp -r $src $out/assets
+            '';
+          };
+
+          falling-sand-license = pkgs.stdenvNoCC.mkDerivation {
+            name = "falling-sand-license";
+            src = pkgs.lib.sourceByRegex ./. [
+              "LICENSE.txt"
+              "COPYING"
+            ];
+            phases = ["unpackPhase" "installPhase"];
+            installPhase = ''
+              mkdir -p $out
+              cp -r $src/LICENSE.txt $src/COPYING $out/
+            '';
+          };
+
           falling-sand = build-dist {
             name = "falling-sand";
             bin = self.packages.${system}.falling-sand-bin;
@@ -169,18 +148,43 @@
 
           falling-sand-win64 = build-dist {
             name = "falling-sand-win64";
-            bin = self.packages.${system}.falling-sand-win64-bin;
+            bin = self.packages.${system}.falling-sand-bin-win64;
             executable = "falling-sand.exe";
           };
+
+          falling-sand-web = pkgs.stdenvNoCC.mkDerivation {
+            name = "falling-sand-web";
+            src = ./web;
+            nativeBuildInputs = [
+              pkgs.wasm-bindgen-cli
+              pkgs.binaryen
+            ];
+            phases = ["unpackPhase" "installPhase"];
+            installPhase = ''
+              mkdir -p $out
+              wasm-bindgen --out-dir $out --out-name falling-sand --target web ${self.packages.${system}.falling-sand-bin-wasm}/bin/falling-sand.wasm
+              mv $out/falling-sand_bg.wasm .
+              wasm-opt -Oz -o $out/falling-sand_bg.wasm falling-sand_bg.wasm
+              cp $src/* $out/
+              cp -r ${self.packages.${system}.falling-sand-assets}/assets $out/assets
+            '';
+          };
+
+          falling-sand-server = pkgs.writeShellScriptBin "run-falling-sand-server" ''
+            ${pkgs.simple-http-server}/bin/simple-http-server -i -c=html,wasm,ttf,js -- ${self.packages.${system}.falling-sand-web}/
+          '';
+
+          default = self.packages.${system}.falling-sand;
         };
 
-        defaultPackage = self.packages.${system}.falling-sand;
+        apps = {
+          falling-sand = flake-utils.lib.mkApp {
+            drv = self.packages.${system}.falling-sand;
+            exePath = "/falling-sand";
+          };
 
-        apps.falling-sand = flake-utils.lib.mkApp {
-          drv = self.packages.${system}.falling-sand;
-          exePath = "/falling-sand";
+          default = self.apps.${system}.falling-sand;
         };
-        defaultApp = self.apps.${system}.falling-sand;
 
         checks = {
           inherit (self.packages.${system}) falling-sand-bin;
