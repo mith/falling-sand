@@ -25,9 +25,9 @@
   }:
     flake-utils.lib.eachDefaultSystem (
       system: let
-        pkgs = nixpkgs.legacyPackages."${system}";
+        pkgs = nixpkgs.legacyPackages.${system};
         rust = fenix.packages.${system}.stable;
-        crane-lib = crane.lib."${system}".overrideToolchain rust.toolchain;
+        crane-lib = crane.lib.${system}.overrideToolchain rust.toolchain;
         falling-sand-src = crane-lib.cleanCargoSource (crane-lib.path ./.);
         buildInputs = with pkgs; [
           libxkbcommon
@@ -47,7 +47,7 @@
           clang
           pkg-config
         ];
-        build-dist = {
+        pack-dist = {
           name,
           bin,
           executable,
@@ -62,6 +62,25 @@
               cp -r ${self.packages.${system}.falling-sand-license}/* $out/
             '';
           };
+        cross-build-bin = {
+          target,
+          buildArgs,
+        }: let
+          toolchain = with fenix.packages.${system};
+            combine [
+              stable.rustc
+              stable.cargo
+              targets."${target}".stable.rust-std
+            ];
+          craneLib = (crane.mkLib pkgs).overrideToolchain toolchain;
+        in
+          craneLib.buildPackage ({
+              src = falling-sand-src;
+              doCheck = false;
+              CARGO_BUILD_TARGET = target;
+              inherit nativeBuildInputs;
+            }
+            // buildArgs);
       in {
         packages = {
           falling-sand-bin = crane-lib.buildPackage {
@@ -72,50 +91,25 @@
             inherit nativeBuildInputs;
           };
 
-          falling-sand-bin-wasm = let
+          falling-sand-bin-wasm = cross-build-bin {
             target = "wasm32-unknown-unknown";
-            toolchain = with fenix.packages.${system};
-              combine [
-                stable.rustc
-                stable.cargo
-                targets.${target}.stable.rust-std
-              ];
-            craneWasm = (crane.mkLib pkgs).overrideToolchain toolchain;
-          in
-            craneWasm.buildPackage {
-              src = falling-sand-src;
-              CARGO_BUILD_TARGET = target;
-              CARGO_PROFILE = "release";
+            buildArgs = {
               RUSTFLAGS = "--cfg=web_sys_unstable_apis";
               cargoExtraArgs = "--features=webgpu";
-              inherit nativeBuildInputs;
-              doCheck = false;
             };
+          };
 
-          falling-sand-bin-win64 = let
+          falling-sand-bin-win64 = cross-build-bin {
             target = "x86_64-pc-windows-gnu";
-            toolchain = with fenix.packages.${system};
-              combine [
-                stable.rustc
-                stable.cargo
-                targets."${target}".stable.rust-std
-              ];
-            craneLib = (crane.mkLib pkgs).overrideToolchain toolchain;
-          in
-            craneLib.buildPackage {
-              src = falling-sand-src;
+            buildArgs = {
               strictDeps = true;
-              doCheck = false;
-              CARGO_BUILD_TARGET = target;
               cargoExtraArgs = "--features=parallel";
-
-              inherit nativeBuildInputs;
-
               depsBuildBuild = with pkgs; [
                 pkgsCross.mingwW64.stdenv.cc
                 pkgsCross.mingwW64.windows.pthreads
               ];
             };
+          };
 
           falling-sand-assets = pkgs.stdenvNoCC.mkDerivation {
             name = "falling-sand-assets";
@@ -140,13 +134,13 @@
             '';
           };
 
-          falling-sand = build-dist {
+          falling-sand = pack-dist {
             name = "falling-sand";
             bin = self.packages.${system}.falling-sand-bin;
             executable = "falling-sand";
           };
 
-          falling-sand-win64 = build-dist {
+          falling-sand-win64 = pack-dist {
             name = "falling-sand-win64";
             bin = self.packages.${system}.falling-sand-bin-win64;
             executable = "falling-sand.exe";
