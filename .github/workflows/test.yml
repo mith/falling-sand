@@ -16,3 +16,14 @@ jobs:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
       - uses: DeterminateSystems/magic-nix-cache-action@main
       - run: nix flake check
+
+  cargo-deny:
+    runs-on: ubuntu-22.04
+    # Prevent sudden announcement of a new advisory from failing ci:
+    continue-on-error: true
+
+    steps:
+    - uses: actions/checkout@v3
+    - uses: EmbarkStudios/cargo-deny-action@v1
+      with:
+        command: check advisories
