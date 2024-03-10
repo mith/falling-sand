@@ -39,33 +39,28 @@ pub fn react_chunk(grid: &mut ChunkNeighborhoodView, material_reactions: &Materi
             let mut probable_reactions: ReactionChoices = SmallVec::new();
 
             let particle_neighborhood_position = particle_chunk_position + chunk_size;
-            for dx in -1..=1 {
-                for dy in -1..=1 {
-                    if dx == 0 && dy == 0 {
-                        continue;
-                    }
-                    let adjecent_particle_position =
-                        particle_neighborhood_position + IVec2::new(dx, dy);
-                    let adjacent_particle = *grid.get_particle(adjecent_particle_position);
-                    if adjacent_particle.dirty() {
-                        continue;
-                    }
-                    if let Some(reaction) =
-                        material_reactions.get(particle.material(), adjacent_particle.material())
-                    {
-                        // Add the probability of the reaction to the existing reaction if it exists
-                        // or create a new reaction with the probability of the reaction
-                        let reaction_probability = reaction.probability();
-                        let reaction_product = reaction.product_material();
+            for (dx, dy) in [(0i32, -1), (-1, 0), (1, 0), (0, 1)].iter().copied() {
+                let adjecent_particle_position =
+                    particle_neighborhood_position + IVec2::new(dx, dy);
+                let adjacent_particle = *grid.get_particle(adjecent_particle_position);
+                if adjacent_particle.dirty() {
+                    continue;
+                }
+                if let Some(reaction) =
+                    material_reactions.get(particle.material(), adjacent_particle.material())
+                {
+                    // Add the probability of the reaction to the existing reaction if it exists
+                    // or create a new reaction with the probability of the reaction
+                    let reaction_probability = reaction.probability();
+                    let reaction_product = reaction.product_material();
 
-                        let existing_reaction = probable_reactions
-                            .iter_mut()
-                            .find(|(m, _)| *m == reaction_product);
-                        if let Some((_, prob)) = existing_reaction {
-                            *prob += reaction_probability;
-                        } else {
-                            probable_reactions.push((reaction_product, reaction_probability));
-                        }
+                    let existing_reaction = probable_reactions
+                        .iter_mut()
+                        .find(|(m, _)| *m == reaction_product);
+                    if let Some((_, prob)) = existing_reaction {
+                        *prob += reaction_probability;
+                    } else {
+                        probable_reactions.push((reaction_product, reaction_probability));
                     }
                 }
             }

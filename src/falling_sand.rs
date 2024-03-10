@@ -373,7 +373,7 @@ fn create_chunk_images(
             depth_or_array_layers: 1,
         },
         TextureDimension::D2,
-        &cast_slice(&initial_color.as_linear_rgba_f32()),
+        cast_slice(&initial_color.as_linear_rgba_f32()),
         TextureFormat::Rgba32Float,
         RenderAssetUsages::RENDER_WORLD,
     );
@@ -389,8 +389,7 @@ fn create_chunk_images(
 fn create_color_map_image(material_colors: &MaterialColor) -> Image {
     let material_colors_vec = material_colors
         .values()
-        .map(|c| c.as_rgba_u8())
-        .flatten()
+        .flat_map(|c| c.as_rgba_u8())
         .collect::<Vec<u8>>();
 
     let mut color_map_image = Image::new(

@@ -1,6 +1,6 @@
 use std::fmt;
 
-use bevy::{prelude::*, utils::HashMap};
+use bevy::prelude::*;
 
 use bytemuck::{Contiguous, NoUninit};
 use enum_map::EnumMap;
@@ -35,6 +35,7 @@ pub enum Material {
     Wood = 6,
     Steam = 7,
     Oil = 8,
+    Plant = 9,
 }
 
 impl fmt::Display for Material {
@@ -49,6 +50,7 @@ impl fmt::Display for Material {
             Material::Wood => write!(f, "Wood"),
             Material::Steam => write!(f, "Steam"),
             Material::Oil => write!(f, "Oil"),
+            Material::Plant => write!(f, "Plant"),
         }
     }
 }
@@ -86,6 +88,7 @@ impl TryFrom<u32> for Material {
             6 => Ok(Self::Wood),
             7 => Ok(Self::Steam),
             8 => Ok(Self::Oil),
+            9 => Ok(Self::Plant),
             _ => Err(()),
         }
     }
@@ -133,6 +136,7 @@ impl Default for MaterialDensities {
             Material::Wood => 500,
             Material::Steam => 1,
             Material::Oil => 800,
+            Material::Plant => 500,
         })
     }
 }
@@ -152,6 +156,7 @@ impl Default for MaterialStates {
             Material::Wood => StateOfMatter::Solid,
             Material::Steam => StateOfMatter::Gas,
             Material::Oil => StateOfMatter::Liquid,
+            Material::Plant => StateOfMatter::Solid,
         })
     }
 }
@@ -171,6 +176,7 @@ impl Default for MaterialFlowing {
             Material::Wood => false,
             Material::Steam => true,
             Material::Oil => true,
+            Material::Plant => false,
         })
     }
 }
@@ -190,14 +196,14 @@ impl Default for MaterialColor {
             Material::Wood => Color::rgb_u8(160, 82, 45u8),
             Material::Steam => Color::rgb_u8(230, 230, 230u8),
             Material::Oil => Color::rgb_u8(40, 40, 0u8),
+            Material::Plant => Color::rgb_u8(0, 160, 0u8),
         })
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Reaction {
-    /// The probability of the reaction happening, from 0 to 100
     probability: u32,
-    /// The resulting material of the reaction
     product_material: Material,
 }
 
@@ -211,50 +217,64 @@ impl Reaction {
     }
 }
 
-#[derive(Resource, Deref)]
-pub struct MaterialReactions(HashMap<(Material, Material), Reaction>);
+#[derive(Resource)]
+pub struct MaterialReactions(EnumMap<Material, Option<EnumMap<Material, Option<Reaction>>>>);
 
 impl MaterialReactions {
     pub fn get(&self, material: Material, adjacent_material: Material) -> Option<&Reaction> {
-        self.0.get(&(material, adjacent_material))
+        self.0[material]
+            .as_ref()
+            .and_then(|m| m[adjacent_material].as_ref())
     }
 
     pub fn has_reactions_for(&self, material: Material) -> bool {
-        self.0.keys().any(|(m1, _m2)| *m1 == material)
+        self.0[material].is_some()
     }
 }
 
 impl Default for MaterialReactions {
     fn default() -> Self {
-        MaterialReactions(HashMap::from([
-            (
-                (Material::Water, Material::Fire),
-                Reaction {
+        MaterialReactions(enum_map! {
+            Material::Water => Some(enum_map! {
+                Material::Fire => Some(Reaction {
                     probability: 1000,
-                    product_material: Material::Steam,
-                },
-            ),
-            (
-                (Material::Wood, Material::Fire),
-                Reaction {
+                    product_material: Material::Steam
+                }),
+                Material::Plant => Some(Reaction {
+                    probability: 100,
+                    product_material: Material::Plant
+                }),
+                _ => None
+            }),
+            Material::Wood => Some(enum_map! {
+                Material::Fire => Some(Reaction {
                     probability: 1500,
-                    product_material: Material::Fire,
-                },
-            ),
-            (
-                (Material::Oil, Material::Fire),
-                Reaction {
+                    product_material: Material::Fire
+                }),
+                _ => None
+            }),
+            Material::Oil => Some(enum_map! {
+                Material::Fire => Some(Reaction {
                     probability: 4000,
-                    product_material: Material::Fire,
-                },
-            ),
-            (
-                (Material::Smoke, Material::Air),
-                Reaction {
+                    product_material: Material::Fire
+                }),
+                _ => None
+            }),
+            Material::Smoke => Some(enum_map! {
+                Material::Air => Some(Reaction {
                     probability: 5,
-                    product_material: Material::Air,
-                },
-            ),
-        ]))
+                    product_material: Material::Air
+                }),
+                _ => None
+            }),
+            Material::Plant => Some(enum_map! {
+                Material::Fire => Some(Reaction {
+                    probability: 500,
+                    product_material: Material::Fire
+                }),
+                _ => None
+            }),
+            _ => None
+        })
     }
 }

@@ -109,7 +109,7 @@ fn prepare_bind_group(
 
     falling_sand_images_bind_groups.0.clear();
 
-    if bindless_supported(&*render_device) {
+    if bindless_supported(&render_device) {
         let extracted_chunks: Vec<_> = extracted_chunks.iter().collect();
 
         for chunks in &extracted_chunks.iter().chunks(MAX_TEXTURE_COUNT) {

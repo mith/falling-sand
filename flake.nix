@@ -38,6 +38,7 @@
           python3
           vulkan-loader
           wayland
+          pkgs.stdenv.cc.cc.lib
         ];
         nativeBuildInputs = with pkgs; [
           mold
