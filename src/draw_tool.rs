@@ -1,6 +1,6 @@
 use bevy::{
     app::{App, FixedUpdate, Startup, Update},
-    asset::AssetServer,
+    asset::{AssetServer, Handle},
     ecs::{
         change_detection::DetectChanges,
         component::Component,
@@ -14,7 +14,7 @@ use bevy::{
         },
         system::{Commands, Local, Query, Res, ResMut, Resource},
     },
-    hierarchy::BuildChildren,
+    hierarchy::{BuildChildren, ChildBuilder},
     input::{
         keyboard::KeyCode,
         mouse::{MouseButton, MouseWheel},
@@ -23,11 +23,12 @@ use bevy::{
     math::{IVec2, Vec2},
     prelude::{default, Color},
     reflect::Reflect,
-    text::{Text, TextSection, TextStyle},
+    text::{Font, Text, TextSection, TextStyle},
     time::{Time, Timer},
     ui::{
         node_bundles::{ButtonBundle, NodeBundle, TextBundle},
-        Display, Interaction, JustifyContent, Style, UiRect, Val,
+        BackgroundColor, BorderColor, Display, FlexDirection, Interaction, JustifyContent, Style,
+        UiRect, Val,
     },
     utils::HashMap,
 };
@@ -62,10 +63,7 @@ struct DrawToolFixedUpdateSet;
 impl bevy::app::Plugin for DrawToolPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<CursorTilePosition>()
-            .insert_resource(ToolState {
-                draw_type: Material::Sand,
-                brush_size: 1,
-            })
+            .init_resource::<ToolState>()
             .add_systems(Startup, setup_ui)
             .add_systems(
                 Update,
@@ -97,6 +95,7 @@ impl bevy::app::Plugin for DrawToolPlugin {
                     switch_tool_system,
                     material_button_system,
                     brush_size_system,
+                    brush_shape_picker_system,
                 )
                     .before(DrawToolUpdateSet)
                     .in_set(DrawToolPickerSet)
@@ -111,96 +110,175 @@ struct MaterialButton(Material);
 #[derive(Component)]
 struct BrushSizeText;
 
+#[derive(Component)]
+struct BrushShapePicker;
+
 fn setup_ui(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
     material_colors: Res<MaterialColor>,
     tool_state: Res<ToolState>,
 ) {
+    let font = asset_server.load("fonts/PublicPixel-z84yD.ttf");
+    let node_style = Style {
+        justify_content: JustifyContent::SpaceBetween,
+        border: UiRect::all(Val::Px(2.0)),
+        display: Display::Flex,
+        flex_direction: FlexDirection::Column,
+        padding: UiRect::all(Val::Px(2.0)),
+        margin: UiRect::all(Val::Px(2.0)),
+        ..default()
+    };
+    let border_color = (Color::GRAY * 1.8).into();
+    let background_color = Color::WHITE.into();
+
     commands
         .spawn((
             Interaction::default(),
             NodeBundle {
-                style: Style {
-                    justify_content: JustifyContent::SpaceBetween,
-                    border: UiRect::all(Val::Px(2.)),
-                    display: Display::Flex,
-                    flex_direction: bevy::ui::FlexDirection::Column,
-                    padding: UiRect::all(Val::Px(2.)),
-                    margin: UiRect::all(Val::Px(2.)),
-                    ..default()
-                },
-                border_color: (Color::GRAY * 1.8).into(),
-                background_color: Color::WHITE.into(),
+                style: node_style,
+                border_color,
+                background_color,
                 ..default()
             },
         ))
         .with_children(|parent| {
-            for material in MaterialIterator::new() {
-                let material_color = material_colors.0[material];
+            spawn_material_picker(parent, &font, &material_colors);
+            spawn_brush_size_picker(parent, &font, &tool_state);
+            spawn_brush_shape_picker(parent, &font);
+        });
+}
 
-                let lightness = material_color.l();
+fn spawn_material_picker(
+    parent: &mut ChildBuilder,
+    font: &Handle<Font>,
+    material_colors: &Res<MaterialColor>,
+) {
+    for material in MaterialIterator::new() {
+        let material_color = material_colors.0[material];
+        let lightness = material_color.l();
 
-                let text_color = if lightness > 0.5 {
-                    Color::BLACK
-                } else {
-                    Color::WHITE
-                };
+        let text_color = if lightness > 0.5 {
+            Color::BLACK
+        } else {
+            Color::WHITE
+        };
+        let border_color = if lightness > 0.5 {
+            material_color * 0.8
+        } else {
+            material_color * 1.2
+        };
 
-                let border_color = if lightness > 0.5 {
-                    material_color * 0.8
-                } else {
-                    material_color * 1.2
-                };
+        parent
+            .spawn((
+                MaterialButton(material),
+                ButtonBundle {
+                    style: Style {
+                        margin: UiRect::all(Val::Px(2.0)),
+                        padding: UiRect::all(Val::Px(2.0)),
+                        border: UiRect::all(Val::Px(2.0)),
+                        ..default()
+                    },
+                    border_color: border_color.into(),
+                    background_color: material_color.into(),
+                    ..default()
+                },
+            ))
+            .with_children(|parent| {
+                parent.spawn(TextBundle::from_section(
+                    material.to_string(),
+                    TextStyle {
+                        font: font.clone(),
+                        color: text_color,
+                        ..default()
+                    },
+                ));
+            });
+    }
+}
 
+fn spawn_brush_size_picker(
+    parent: &mut ChildBuilder,
+    font: &Handle<Font>,
+    tool_state: &Res<ToolState>,
+) {
+    let style = Style {
+        margin: UiRect::all(Val::Px(2.0)),
+        padding: UiRect::all(Val::Px(2.0)),
+        border: UiRect::all(Val::Px(2.0)),
+        ..default()
+    };
+    parent.spawn((
+        BrushSizeText,
+        TextBundle::from_sections([
+            TextSection::new(
+                "Brush size:",
+                TextStyle {
+                    font: font.clone(),
+                    color: Color::BLACK,
+                    ..default()
+                },
+            ),
+            TextSection::new(
+                tool_state.brush_size.to_string(),
+                TextStyle {
+                    font: font.clone(),
+                    color: Color::BLACK,
+                    ..default()
+                },
+            ),
+        ])
+        .with_style(style),
+    ));
+}
+
+fn spawn_brush_shape_picker(parent: &mut ChildBuilder, font: &Handle<Font>) {
+    let button_style = Style {
+        margin: UiRect::all(Val::Px(2.0)),
+        padding: UiRect::all(Val::Px(2.0)),
+        border: UiRect::all(Val::Px(2.0)),
+        ..default()
+    };
+    let border_color = (Color::GRAY * 1.8).into();
+    let background_color = Color::WHITE.into();
+
+    parent
+        .spawn((
+            BrushShapePicker,
+            NodeBundle {
+                style: Style {
+                    flex_direction: FlexDirection::Row,
+                    ..default()
+                },
+                ..default()
+            },
+        ))
+        .with_children(|parent| {
+            for (brush_shape, name) in [
+                (BrushShape::Rectangle, "Rect"),
+                (BrushShape::Circle, "Circle"),
+            ] {
                 parent
                     .spawn((
-                        MaterialButton(material),
+                        brush_shape,
                         ButtonBundle {
-                            style: Style {
-                                margin: UiRect::all(Val::Px(2.)),
-                                padding: UiRect::all(Val::Px(2.)),
-                                border: UiRect::all(Val::Px(2.)),
-                                ..default()
-                            },
-                            border_color: border_color.into(),
-                            background_color: material_color.into(),
+                            style: button_style.clone(),
+                            border_color,
+                            background_color,
                             ..default()
                         },
                     ))
                     .with_children(|parent| {
                         parent.spawn(TextBundle::from_section(
-                            material.to_string(),
+                            name,
                             TextStyle {
-                                font: asset_server.load("fonts/PublicPixel-z84yD.ttf"),
-                                color: text_color,
+                                font: font.clone(),
+                                color: Color::BLACK,
                                 ..default()
                             },
                         ));
                     });
             }
-
-            parent.spawn((
-                BrushSizeText,
-                TextBundle::from_sections([
-                    TextSection::new(
-                        "Brush size:",
-                        TextStyle {
-                            font: asset_server.load("fonts/PublicPixel-z84yD.ttf"),
-                            color: Color::BLACK,
-                            ..default()
-                        },
-                    ),
-                    TextSection::new(
-                        tool_state.brush_size.to_string(),
-                        TextStyle {
-                            font: asset_server.load("fonts/PublicPixel-z84yD.ttf"),
-                            color: Color::BLACK,
-                            ..default()
-                        },
-                    ),
-                ]),
-            ));
         });
 }
 
@@ -215,10 +293,28 @@ fn material_button_system(
     }
 }
 
+#[derive(Default, Component, Clone, Copy, PartialEq, Eq)]
+pub enum BrushShape {
+    #[default]
+    Rectangle,
+    Circle,
+}
+
 #[derive(Resource)]
 pub struct ToolState {
     pub draw_type: Material,
     pub brush_size: u32,
+    pub brush_shape: BrushShape,
+}
+
+impl Default for ToolState {
+    fn default() -> Self {
+        Self {
+            draw_type: Material::Sand,
+            brush_size: 1,
+            brush_shape: BrushShape::Rectangle,
+        }
+    }
 }
 
 fn switch_tool_system(
@@ -271,6 +367,40 @@ fn brush_size_system(
     }
 }
 
+fn brush_shape_picker_system(
+    mut brush_shape_button_query: Query<
+        (&Interaction, &BrushShape, &mut BorderColor),
+        Changed<Interaction>,
+    >,
+    mut background_color_query: Query<(&mut BackgroundColor, &BrushShape)>,
+    mut tool_state: ResMut<ToolState>,
+) {
+    for (interaction, brush_shape, mut border_color) in brush_shape_button_query.iter_mut() {
+        match *interaction {
+            Interaction::Pressed => {
+                tool_state.brush_shape = *brush_shape;
+                border_color.0 = Color::BLACK;
+            }
+            Interaction::Hovered => {
+                border_color.0 = Color::GRAY;
+            }
+            Interaction::None => {
+                border_color.0 = BorderColor::default().0;
+            }
+        }
+    }
+
+    background_color_query
+        .iter_mut()
+        .for_each(|(mut background_color, brush_shape)| {
+            if *brush_shape == tool_state.brush_shape {
+                background_color.0 = Color::SILVER;
+            } else {
+                background_color.0 = BackgroundColor::default().0;
+            }
+        });
+}
+
 #[derive(Default)]
 struct LastDrawPosition(Option<IVec2>);
 
@@ -306,13 +436,28 @@ fn calculate_stroke(
 
         let mut stroke_points = Vec::new();
         for point in line.iter() {
-            for dx in 0..tool_state.brush_size {
-                for dy in 0..tool_state.brush_size {
-                    let adjusted_point = IVec2::new(
-                        point.x + dx as i32 - (tool_state.brush_size / 2) as i32,
-                        point.y + dy as i32 - (tool_state.brush_size / 2) as i32,
-                    );
-                    stroke_points.push(adjusted_point);
+            match tool_state.brush_shape {
+                BrushShape::Rectangle => {
+                    for dx in 0..tool_state.brush_size {
+                        for dy in 0..tool_state.brush_size {
+                            let adjusted_point = IVec2::new(
+                                point.x + dx as i32 - (tool_state.brush_size / 2) as i32,
+                                point.y + dy as i32 - (tool_state.brush_size / 2) as i32,
+                            );
+                            stroke_points.push(adjusted_point);
+                        }
+                    }
+                }
+                BrushShape::Circle => {
+                    let radius = tool_state.brush_size as i32 / 2;
+                    for dx in -radius..=radius {
+                        for dy in -radius..=radius {
+                            if dx.pow(2) + dy.pow(2) <= radius.pow(2) {
+                                let adjusted_point = IVec2::new(point.x + dx, point.y + dy);
+                                stroke_points.push(adjusted_point);
+                            }
+                        }
+                    }
                 }
             }
         }

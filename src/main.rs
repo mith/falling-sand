@@ -7,7 +7,7 @@ use draw_tool::DrawToolPlugin;
 use hovering_ui::HoveringUiPlugin;
 use pan_zoom_camera::{DragState, PanZoomCameraPlugin};
 
-use crate::{draw_tool::ToolState, falling_sand::FallingSandPlugin, material::Material};
+use crate::falling_sand::FallingSandPlugin;
 use bevy::prelude::*;
 use time_control::TimeControlPlugin;
 
