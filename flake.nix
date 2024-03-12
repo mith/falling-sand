@@ -81,8 +81,21 @@
           };
       in {
         packages = {
+          falling-sand-deps = crane-lib.buildDepsOnly {
+            pname = "falling-sand-deps";
+
+            strictDeps = true;
+            src = falling-sand-src;
+
+            cargoExtraArgs = "--features=parallel";
+
+            inherit buildInputs;
+            inherit nativeBuildInputs;
+          };
+
           falling-sand-bin = crane-lib.buildPackage {
             src = falling-sand-src;
+            cargoArtifacts = self.packages.${system}.falling-sand-deps;
             cargoExtraArgs = "--features=parallel";
             inherit buildInputs;
             inherit nativeBuildInputs;
@@ -135,6 +148,31 @@
             '';
           };
 
+          falling-sand-attribution = crane-lib.mkCargoDerivation {
+            buildPhaseCargoCommand = "cargo --offline about generate about.hbs > third-party.html";
+
+            src = pkgs.lib.cleanSourceWith {
+              src = ./.;
+              filter = path: type:
+                type
+                == "directory"
+                || pkgs.lib.hasSuffix "Cargo.toml" path
+                || pkgs.lib.hasSuffix "Cargo.lock" path
+                || pkgs.lib.hasSuffix "about.hbs" path
+                || pkgs.lib.hasSuffix "about.toml" path
+                || pkgs.lib.hasSuffix "main.rs" path;
+            };
+
+            installPhase = ''
+              mkdir -p $out;
+              cp third-party.html $out/third-party.html
+            '';
+
+            cargoArtifacts = self.packages.${system}.falling-sand-deps;
+
+            nativeBuildInputs = [pkgs.cargo-about];
+          };
+
           falling-sand-license = pkgs.stdenvNoCC.mkDerivation {
             name = "falling-sand-license";
             src = pkgs.lib.sourceByRegex ./. [
@@ -144,8 +182,8 @@
             ];
             installPhase = ''
               mkdir -p $out
-              cp -r $src/LICENSE.txt $src/COPYING $src/third-party.html $out/
-              mkdir -p src && touch src/main.rs
+              cp $src/LICENSE.txt $src/COPYING $out/
+              cp ${self.packages.${system}.falling-sand-attribution}/third-party.html $out/third-party.html
             '';
           };
 
@@ -181,28 +219,6 @@
           falling-sand-server = pkgs.writeShellScriptBin "run-falling-sand-server" ''
             ${pkgs.simple-http-server}/bin/simple-http-server -i -c=html,wasm,ttf,js -- ${self.packages.${system}.falling-sand-web}/
           '';
-
-          update-third-party-attribution = let
-            name = "update-third-party-attribution";
-            script = pkgs.writeShellScriptBin name ''
-              ${pkgs.cargo-about}/bin/cargo-about generate about.hbs > third-party.html
-            '';
-          in
-            pkgs.symlinkJoin {
-              inherit name;
-              paths = [script (rust.withComponents ["cargo" "rustc"])];
-              buildInputs = [pkgs.makeWrapper];
-              postBuild = "wrapProgram $out/bin/${name} --prefix PATH : $out/bin";
-            };
-
-          falling-sand-deps = crane-lib.buildDepsOnly {
-            src = falling-sand-src;
-            cargoExtraArgs = "--features=parallel";
-            inherit buildInputs;
-            inherit nativeBuildInputs;
-          };
-
-          default = self.packages.${system}.falling-sand;
         };
 
         apps = {

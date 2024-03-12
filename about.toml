@@ -11,3 +11,4 @@ accepted = [
   "ISC",
   "Unicode-DFS-2016",
 ]
+no-clearly-defined = true
