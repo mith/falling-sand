@@ -7,6 +7,10 @@
     fenix.url = "github:nix-community/fenix";
     crane.url = "github:ipetkov/crane";
     pre-commit-hooks.url = "github:cachix/pre-commit-hooks.nix";
+    advisory-db = {
+      url = "github:rustsec/advisory-db";
+      flake = false;
+    };
 
     fenix.inputs.nixpkgs.follows = "nixpkgs";
     crane.inputs.nixpkgs.follows = "nixpkgs";
@@ -242,6 +246,14 @@
 
           cargo-clippy = crane-lib.cargoClippy {
             src = falling-sand-src;
+            cargoArtifacts = self.packages.${system}.falling-sand-deps;
+            inherit buildInputs;
+            inherit nativeBuildInputs;
+          };
+
+          cargo-audit = crane-lib.cargoAudit {
+            inherit (inputs) advisory-db;
+            src = ./.;
             cargoArtifacts = self.packages.${system}.falling-sand-deps;
             inherit buildInputs;
             inherit nativeBuildInputs;
