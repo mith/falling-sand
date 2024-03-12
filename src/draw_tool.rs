@@ -69,7 +69,6 @@ impl bevy::app::Plugin for DrawToolPlugin {
                 Update,
                 (
                     cursor_tile_position_system,
-                    update_chunk_positions,
                     calculate_stroke,
                     apply_deferred,
                     spawn_chunk_under_stroke,

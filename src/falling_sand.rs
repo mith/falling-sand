@@ -75,23 +75,19 @@ impl Plugin for FallingSandPlugin {
         .add_systems(
             FixedPreUpdate,
             (
-                activate_or_deactivate_chunks,
-                apply_deferred,
-                clean_chunks,
-                spawn_chunks_around_active,
+                (
+                    activate_or_deactivate_chunks,
+                    apply_deferred,
+                    (clean_chunks, spawn_chunks_around_active),
+                )
+                    .chain(),
+                (
+                    update_chunk_positions,
+                    gather_active_chunks,
+                    update_chunk_positions_data,
+                ),
             )
-                .chain(),
-        )
-        .add_systems(
-            FixedUpdate,
-            (
-                update_chunk_positions,
-                gather_active_chunks,
-                update_chunk_positions_data,
-            )
-                .in_set(FallingSandSet)
-                .in_set(FallingSandPreSet)
-                .before(FallingSandPhysicsSet),
+                .in_set(FallingSandSet),
         )
         .add_systems(
             FixedUpdate,

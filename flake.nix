@@ -71,7 +71,7 @@
         }:
           pkgs.stdenvNoCC.mkDerivation {
             inherit name;
-            phases = ["installPhase"];
+            dontUnpack = true;
             installPhase = ''
               mkdir -p $out
               cp ${bin}/bin/${executable} $out/${executable}
@@ -104,10 +104,31 @@
             ];
           };
 
+          falling-sand-wasm-processed = pkgs.stdenvNoCC.mkDerivation {
+            name = "falling-sand-wasm-processed";
+
+            nativeBuildInputs = [
+              pkgs.wasm-bindgen-cli
+              pkgs.binaryen
+            ];
+
+            dontUnpack = true;
+
+            buildPhase = ''
+              wasm-bindgen --out-dir . --out-name falling-sand --target web ${self.packages.${system}.falling-sand-bin-wasm}/bin/falling-sand.wasm
+              wasm-opt -Oz -o falling-sand_bg.wasm falling-sand_bg.wasm
+            '';
+
+            installPhase = ''
+              mkdir -p $out
+              cp falling-sand_bg.wasm $out/
+              cp falling-sand.js $out/
+            '';
+          };
+
           falling-sand-assets = pkgs.stdenvNoCC.mkDerivation {
             name = "falling-sand-assets";
             src = ./assets;
-            phases = ["unpackPhase" "installPhase"];
             installPhase = ''
               mkdir -p $out
               cp -r $src $out/assets
@@ -121,7 +142,6 @@
               "COPYING"
               "third-party.html"
             ];
-            phases = ["unpackPhase" "installPhase"];
             installPhase = ''
               mkdir -p $out
               cp -r $src/LICENSE.txt $src/COPYING $src/third-party.html $out/
@@ -148,13 +168,11 @@
               pkgs.wasm-bindgen-cli
               pkgs.binaryen
             ];
-            phases = ["unpackPhase" "installPhase"];
             installPhase = ''
               mkdir -p $out
-              wasm-bindgen --out-dir $out --out-name falling-sand --target web ${self.packages.${system}.falling-sand-bin-wasm}/bin/falling-sand.wasm
-              mv $out/falling-sand_bg.wasm .
-              wasm-opt -Oz -o $out/falling-sand_bg.wasm falling-sand_bg.wasm
               cp $src/* $out/
+              cp ${self.packages.${system}.falling-sand-wasm-processed}/falling-sand_bg.wasm $out/
+              cp ${self.packages.${system}.falling-sand-wasm-processed}/falling-sand.js $out/
               cp -r ${self.packages.${system}.falling-sand-assets}/assets $out/assets
               cp -r ${self.packages.${system}.falling-sand-license}/* $out/
             '';
