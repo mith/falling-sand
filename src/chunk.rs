@@ -28,6 +28,7 @@ impl Chunk {
 pub struct ChunkData {
     particles: ParticleGrid,
     attributes: ParticleAttributes,
+    iter_rng: StdRng,
     rng: StdRng,
     dirty: bool,
 }
@@ -39,6 +40,7 @@ impl ChunkData {
         ChunkData {
             particles: particle_grid,
             attributes: ParticleAttributes::new(size),
+            iter_rng: rng.clone(),
             rng,
             dirty: false,
         }
@@ -96,7 +98,12 @@ impl ChunkData {
     }
 
     pub fn rng(&mut self) -> &mut StdRng {
+        self.dirty = true;
         &mut self.rng
+    }
+
+    pub fn iter_rng(&mut self) -> &mut StdRng {
+        &mut self.iter_rng
     }
 
     pub fn is_dirty(&self) -> bool {

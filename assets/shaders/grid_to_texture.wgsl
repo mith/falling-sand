@@ -21,7 +21,7 @@ fn extract_material(particle_value: u32) -> u32 {
     return (particle_value >> 10) & 0x3FF; // Shift right by 10 bits and mask with 0x3FF to get 10 bits representing the material
 }
 
-@compute @workgroup_size(32, 32, 1)
+@compute @workgroup_size(8, 8, 1)
 fn render_grid(@builtin(global_invocation_id) invocation_id: vec3<u32>) {
     let location = vec2<i32>(i32(invocation_id.x), i32(invocation_id.y));
 

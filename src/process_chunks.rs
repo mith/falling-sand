@@ -16,7 +16,7 @@ use crate::{
     active_chunks::ActiveChunks,
     chunk::{Chunk, ChunkData},
     chunk_neighborhood_view::ChunkNeighborhoodView,
-    chunk_positions::{ChunkPositions, ChunkPositionsData},
+    falling_sand::{ChunkDataPositions, ChunkPositions},
 };
 
 pub const PROCESSING_LIMIT: i32 = 100;
@@ -24,8 +24,7 @@ pub const PROCESSING_LIMIT: i32 = 100;
 #[derive(SystemParam)]
 pub struct ChunksParam<'w> {
     active_chunks: Res<'w, ActiveChunks>,
-    chunk_positions: Res<'w, ChunkPositions>,
-    chunk_positions_data: Res<'w, ChunkPositionsData>,
+    chunk_positions_data: Res<'w, ChunkDataPositions>,
 }
 
 impl ChunksParam<'_> {
@@ -33,14 +32,8 @@ impl ChunksParam<'_> {
         &self.active_chunks
     }
 
-    pub fn get_chunk_entity_at(&self, chunk_position: IVec2) -> Option<Entity> {
-        self.chunk_positions.get_chunk_at(chunk_position)
-    }
-
     pub fn get_chunk_at(&self, chunk_position: IVec2) -> &Chunk {
-        self.chunk_positions_data
-            .get_chunk_at(chunk_position)
-            .unwrap()
+        self.chunk_positions_data.get_at(chunk_position).unwrap()
     }
 
     pub fn get_neighborhood(&self, chunk_position: IVec2) -> Array2<&Chunk> {
@@ -49,10 +42,6 @@ impl ChunksParam<'_> {
             self.get_chunk_at(pos)
         });
         neighborhood
-    }
-
-    pub fn chunk_exists(&self, position: IVec2) -> bool {
-        self.chunk_positions.contains(position)
     }
 }
 

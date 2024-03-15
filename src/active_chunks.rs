@@ -10,7 +10,8 @@ use rand::seq::SliceRandom;
 use smallvec::SmallVec;
 
 use crate::{
-    chunk_positions::ChunkPosition, falling_sand::FallingSandRng, process_chunks::PROCESSING_LIMIT,
+    falling_sand::{ChunkPosition, FallingSandRng},
+    process_chunks::PROCESSING_LIMIT,
 };
 
 #[derive(Component)]

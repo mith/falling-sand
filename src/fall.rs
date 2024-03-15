@@ -35,7 +35,7 @@ pub fn fall_chunk(
         let min_x = 0;
         let max_x = chunk_size.x;
         let random_dir_range = {
-            let rng = grid.center_chunk_mut().rng();
+            let rng = grid.center_chunk_mut().iter_rng();
             random_dir_range(rng, min_x, max_x)
         };
         for x in random_dir_range {

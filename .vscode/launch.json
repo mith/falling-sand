@@ -13,6 +13,7 @@
                     "build",
                     "--bin=falling-sand",
                     "--package=falling-sand",
+                    "--features=parallel"
                 ],
                 "filter": {
                     "name": "falling-sand",
@@ -37,7 +38,7 @@
                     "--bin=falling-sand",
                     "--package=falling-sand",
                     "--profile=dev-opt",
-                    "--features=bevy/trace_chrome"
+                    "--features=bevy/trace_chrome,parallel"
                 ],
                 "filter": {
                     "name": "falling-sand",
@@ -70,7 +71,7 @@
                     "--profile=release-debug",
                     "--bin=falling-sand",
                     "--package=falling-sand",
-                    "--features=bevy/trace_tracy"
+                    "--features=bevy/trace_tracy,parallel"
                 ],
                 "filter": {
                     "name": "falling-sand",
@@ -92,7 +93,8 @@
                     "build",
                     "--release",
                     "--bin=falling-sand",
-                    "--package=falling-sand"
+                    "--package=falling-sand",
+                    "--features=parallel"
                 ],
                 "filter": {
                     "name": "falling-sand",

@@ -26,7 +26,7 @@ pub fn react_chunk(grid: &mut ChunkNeighborhoodView, material_reactions: &Materi
     for y in min_y..max_y {
         let min_x = 0;
         let max_x = chunk_size.x;
-        for x in random_dir_range(grid.center_chunk_mut().rng(), min_x, max_x) {
+        for x in random_dir_range(grid.center_chunk_mut().iter_rng(), min_x, max_x) {
             let particle_chunk_position = IVec2::new(x, y);
             let particle = *grid
                 .center_chunk_mut()

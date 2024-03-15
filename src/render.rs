@@ -61,6 +61,8 @@ impl Plugin for FallingSandRenderPlugin {
 
         let render_device = render_app.world.resource::<RenderDevice>();
 
+        // info!("Limits: {:#?}", render_device.limits());
+
         let bindless_supported = bindless_supported(render_device);
 
         if !bindless_supported {
@@ -298,7 +300,7 @@ impl render_graph::Node for FallingSandNode {
                     pass.set_pipeline(render_pipeline);
 
                     let size = (self.size.0 as u32, self.size.1 as u32);
-                    let workgroup_size = 32;
+                    let workgroup_size = 8;
                     pass.dispatch_workgroups(
                         size.0 / workgroup_size,
                         size.1 / workgroup_size,

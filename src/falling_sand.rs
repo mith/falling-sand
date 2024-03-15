@@ -11,13 +11,10 @@ use bytemuck::cast_slice;
 use itertools::Itertools;
 use rand::{rngs::StdRng, SeedableRng};
 
+use crate::spatial_store::SpatialStore;
 use crate::{
     active_chunks::{gather_active_chunks, ActiveChunks, ChunkActive},
     chunk::{Chunk, ChunkData},
-    chunk_positions::{
-        update_chunk_positions, update_chunk_positions_data, ChunkPosition, ChunkPositions,
-        ChunkPositionsData,
-    },
     consts::CHUNK_SIZE,
     fall::fall,
     fire::fire_to_smoke,
@@ -67,7 +64,7 @@ impl Plugin for FallingSandPlugin {
         .insert_resource(self.settings.clone())
         .insert_resource(FallingSandRng(StdRng::seed_from_u64(0)))
         .init_resource::<ChunkPositions>()
-        .init_resource::<ChunkPositionsData>()
+        .init_resource::<ChunkDataPositions>()
         .init_resource::<ActiveChunks>()
         .init_resource::<FallingSandImages>()
         .init_resource::<ChunkDebug>()
@@ -81,11 +78,7 @@ impl Plugin for FallingSandPlugin {
                     (clean_chunks, spawn_chunks_around_active),
                 )
                     .chain(),
-                (
-                    update_chunk_positions,
-                    gather_active_chunks,
-                    update_chunk_positions_data,
-                ),
+                (gather_active_chunks,),
             )
                 .in_set(FallingSandSet),
         )
@@ -157,23 +150,23 @@ fn activate_or_deactivate_chunks(mut commands: Commands, chunks_query: Query<(En
 fn spawn_chunks_around_active(
     mut commands: Commands,
     mut chunk_creation_params: ChunkCreationParams,
-    chunk_params: ChunksParam,
     active_chunks_query: Query<&ChunkPosition, With<ChunkActive>>,
 ) {
     for position in &active_chunks_query {
         let chunk_neighbors_2 = chunk_neighbors_n(position.0, 2);
         let unspawned_neighbors = chunk_neighbors_2
             .iter()
-            .filter(|&neighbor| !chunk_params.chunk_exists(*neighbor))
-            .copied();
+            .filter(|&neighbor| !chunk_creation_params.chunk_positions.contains(*neighbor))
+            .copied()
+            .collect_vec();
 
         chunk_creation_params.spawn_chunks(unspawned_neighbors);
 
         for neighbor in chunk_neighbors(position.0)
             .iter()
-            .filter_map(|&pos| chunk_params.get_chunk_entity_at(pos))
+            .filter_map(|&pos| chunk_creation_params.chunk_positions.get_at(pos))
         {
-            commands.entity(neighbor).insert(ChunkActive);
+            commands.entity(*neighbor).insert(ChunkActive);
         }
     }
 }
@@ -243,31 +236,88 @@ fn draw_chunk_debug_gizmos(
     }
 }
 
+#[derive(Component)]
+pub struct ChunkPosition(pub IVec2);
+
+#[derive(Resource, Deref, DerefMut, Default)]
+pub struct ChunkPositions(SpatialStore<Entity>);
+
+#[derive(Resource, Deref, DerefMut, Default)]
+pub struct ChunkDataPositions(SpatialStore<Chunk>);
+
 #[derive(SystemParam)]
 pub struct ChunkCreationParams<'w, 's> {
     commands: Commands<'w, 's>,
     images: ResMut<'w, Assets<Image>>,
     falling_sand_settings: Res<'w, FallingSandSettings>,
     material_colors: Res<'w, MaterialColor>,
+    pub chunk_positions: ResMut<'w, ChunkPositions>,
+    pub chunk_data_positions: ResMut<'w, ChunkDataPositions>,
 }
 
 impl<'w, 's> ChunkCreationParams<'w, 's> {
     pub fn spawn_chunks(&mut self, positions: impl IntoIterator<Item = IVec2>) {
         let initial_material = Material::Air;
-        self.commands.spawn_batch(
-            positions
-                .into_iter()
-                .map(|position| {
-                    create_chunk(
-                        &mut self.images,
-                        &self.falling_sand_settings,
-                        position,
-                        &self.material_colors,
-                        initial_material,
-                    )
-                })
-                .collect_vec(),
-        );
+        positions.into_iter().for_each(|position| {
+            let chunk_bundle = {
+                let images: &mut Assets<Image> = &mut self.images;
+                let falling_sand_settings: &FallingSandSettings = &self.falling_sand_settings;
+                let material_colors: &MaterialColor = &self.material_colors;
+                let IVec2 { x, y } = position;
+                let size = (
+                    falling_sand_settings.size.0 as u32,
+                    falling_sand_settings.size.1 as u32,
+                );
+                let scale = falling_sand_settings.tile_size;
+
+                let seed = 0u64
+                    .wrapping_add(x as u64)
+                    .wrapping_mul(31)
+                    .wrapping_add(y as u64);
+                let rng = StdRng::seed_from_u64(seed);
+                let material = Material::Air;
+
+                let chunk =
+                    Chunk::new_with_material((size.0 as usize, size.1 as usize), material, rng);
+                self.chunk_data_positions.add(position, chunk.clone());
+
+                let initial_color = material_colors[initial_material];
+
+                let (grid_texture, color_image) =
+                    create_chunk_images(size, &chunk.read().unwrap(), images, initial_color);
+
+                (
+                    Name::new("Chunk"),
+                    SpriteBundle {
+                        sprite: Sprite {
+                            custom_size: Some(Vec2::new(
+                                (size.0 * scale) as f32,
+                                (size.1 * scale) as f32,
+                            )),
+                            ..default()
+                        },
+                        texture: color_image,
+                        transform: Transform::from_rotation(Quat::from_rotation_z(
+                            std::f32::consts::PI / 2.0,
+                        ))
+                        .with_translation(Vec3::new(
+                            (x * size.0 as i32 * scale as i32) as f32,
+                            (y * size.1 as i32 * scale as i32) as f32,
+                            0.0,
+                        )),
+                        ..default()
+                    },
+                    ChunkParticleGridImage {
+                        materials_texture: grid_texture,
+                    },
+                    chunk,
+                    ChunkPosition(IVec2::new(x, y)),
+                )
+            };
+
+            let chunk_entity = self.commands.spawn(chunk_bundle).id();
+            self.chunk_positions.add(position, chunk_entity);
+        });
     }
 }
 
@@ -283,57 +333,6 @@ fn setup(
         .cartesian_product(-radius..=radius)
         .map(|(x, y)| (x, y).into());
     chunk_creation_params.spawn_chunks(chunk_positions);
-}
-
-fn create_chunk(
-    images: &mut Assets<Image>,
-    falling_sand_settings: &FallingSandSettings,
-    position: IVec2,
-    material_colors: &MaterialColor,
-    initial_material: Material,
-) -> impl Bundle {
-    let IVec2 { x, y } = position;
-    let size = (
-        falling_sand_settings.size.0 as u32,
-        falling_sand_settings.size.1 as u32,
-    );
-    let scale = falling_sand_settings.tile_size;
-
-    let seed = 0u64
-        .wrapping_add(x as u64)
-        .wrapping_mul(31)
-        .wrapping_add(y as u64);
-    let rng = StdRng::seed_from_u64(seed);
-    let material = Material::Air;
-    let chunk = Chunk::new_with_material((size.0 as usize, size.1 as usize), material, rng);
-
-    let initial_color = material_colors[initial_material];
-
-    let (grid_texture, color_image) =
-        create_chunk_images(size, &chunk.read().unwrap(), images, initial_color);
-
-    (
-        Name::new("Chunk"),
-        SpriteBundle {
-            sprite: Sprite {
-                custom_size: Some(Vec2::new((size.0 * scale) as f32, (size.1 * scale) as f32)),
-                ..default()
-            },
-            texture: color_image,
-            transform: Transform::from_rotation(Quat::from_rotation_z(std::f32::consts::PI / 2.0))
-                .with_translation(Vec3::new(
-                    (x * size.0 as i32 * scale as i32) as f32,
-                    (y * size.1 as i32 * scale as i32) as f32,
-                    0.0,
-                )),
-            ..default()
-        },
-        ChunkParticleGridImage {
-            materials_texture: grid_texture,
-        },
-        chunk,
-        ChunkPosition(IVec2::new(x, y)),
-    )
 }
 
 fn create_chunk_images(

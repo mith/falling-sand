@@ -10,8 +10,8 @@ use bevy::{
 
 use crate::{
     chunk::{Chunk, ChunkData},
-    chunk_positions::ChunkPositions,
     consts::CHUNK_SIZE,
+    falling_sand::ChunkPositions,
     material::Material,
     util::{positive_mod, tile_pos_to_chunk_pos},
 };
@@ -24,7 +24,7 @@ pub struct FallingSandGridQuery<'w, 's> {
 
 impl<'w, 's> FallingSandGridQuery<'w, 's> {
     fn get_chunk_entity_at(&self, position: IVec2) -> Option<Entity> {
-        self.chunk_positions.get_chunk_at(position)
+        self.chunk_positions.get_at(position).copied()
     }
 
     fn get_chunk_data(&self, position: IVec2) -> Arc<RwLock<ChunkData>> {

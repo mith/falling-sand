@@ -14,7 +14,6 @@ use time_control::TimeControlPlugin;
 mod active_chunks;
 mod chunk;
 mod chunk_neighborhood_view;
-mod chunk_positions;
 mod consts;
 mod cursor_world_position;
 mod draw_tool;
@@ -31,6 +30,7 @@ mod particle_grid;
 mod process_chunks;
 mod reactions;
 mod render;
+mod spatial_store;
 mod time_control;
 mod util;
 

@@ -37,9 +37,8 @@ use line_drawing::Bresenham;
 
 use crate::{
     chunk::Chunk,
-    chunk_positions::{update_chunk_positions, ChunkPositions},
     cursor_world_position::CursorWorldPosition,
-    falling_sand::{ChunkCreationParams, FallingSandSet, FallingSandSettings},
+    falling_sand::{ChunkCreationParams, ChunkPositions, FallingSandSet, FallingSandSettings},
     falling_sand_grid::FallingSandGridQuery,
     hovering_ui::{HoveringUiSet, UiFocused},
     material::{Material, MaterialColor, MaterialIterator},
@@ -73,7 +72,6 @@ impl bevy::app::Plugin for DrawToolPlugin {
                     apply_deferred,
                     spawn_chunk_under_stroke,
                     apply_deferred,
-                    update_chunk_positions,
                 )
                     .chain()
                     .run_if(not(resource_exists::<UiFocused>))
@@ -378,10 +376,10 @@ fn brush_shape_picker_system(
         match *interaction {
             Interaction::Pressed => {
                 tool_state.brush_shape = *brush_shape;
-                border_color.0 = Color::BLACK;
+                border_color.0 = Color::BLACK.into();
             }
             Interaction::Hovered => {
-                border_color.0 = Color::GRAY;
+                border_color.0 = Color::GRAY.into();
             }
             Interaction::None => {
                 border_color.0 = BorderColor::default().0;
@@ -393,7 +391,7 @@ fn brush_shape_picker_system(
         .iter_mut()
         .for_each(|(mut background_color, brush_shape)| {
             if *brush_shape == tool_state.brush_shape {
-                background_color.0 = Color::SILVER;
+                background_color.0 = Color::SILVER.into();
             } else {
                 background_color.0 = BackgroundColor::default().0;
             }
@@ -496,7 +494,6 @@ fn get_tile_at_world_position(world_position: Vec2, grid_size: IVec2, tile_size:
 
 fn spawn_chunk_under_stroke(
     mut chunk_creation_params: ChunkCreationParams,
-    chunk_positions: Res<ChunkPositions>,
     stroke_query: Query<&Stroke>,
 ) {
     for stroke in stroke_query.iter() {
@@ -505,7 +502,8 @@ fn spawn_chunk_under_stroke(
             .iter()
             .map(|pos| tile_pos_to_chunk_pos(*pos))
             .unique()
-            .filter(|pos| !chunk_positions.contains(*pos));
+            .filter(|pos| !chunk_creation_params.chunk_positions.contains(*pos))
+            .collect_vec();
         chunk_creation_params.spawn_chunks(unspawned_stroke_chunk_positions);
     }
 }

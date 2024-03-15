@@ -28,8 +28,8 @@
       system: let
         pkgs = nixpkgs.legacyPackages.${system};
         rust = fenix.packages.${system}.stable;
-        crane-lib = crane.lib.${system}.overrideToolchain rust.toolchain;
-        falling-sand-src = crane-lib.cleanCargoSource (crane-lib.path ./.);
+        craneLib = crane.lib.${system}.overrideToolchain rust.toolchain;
+        fallingSandSrc = craneLib.cleanCargoSource (craneLib.path ./.);
         buildInputs = with pkgs; [
           libxkbcommon
           alsa-lib
@@ -49,7 +49,7 @@
           clang
           pkg-config
         ];
-        cross-build-bin = args @ {target, ...}: let
+        crossBuildBin = args @ {target, ...}: let
           toolchain = with fenix.packages.${system};
             combine [
               stable.rustc
@@ -62,13 +62,13 @@
           craneLib.buildPackage (
             cleanedArgs
             // {
-              src = falling-sand-src;
+              src = fallingSandSrc;
               doCheck = false;
               CARGO_BUILD_TARGET = target;
               inherit nativeBuildInputs;
             }
           );
-        pack-dist = {
+        mkPackDist = {
           name,
           bin,
           executable,
@@ -85,33 +85,28 @@
           };
       in {
         packages = {
-          falling-sand-deps = crane-lib.buildDepsOnly {
-            pname = "falling-sand-deps";
-
-            strictDeps = true;
-            src = falling-sand-src;
-
+          falling-sand-deps = craneLib.buildDepsOnly {
+            src = fallingSandSrc;
             cargoExtraArgs = "--features=parallel";
-
             inherit buildInputs;
             inherit nativeBuildInputs;
           };
 
-          falling-sand-bin = crane-lib.buildPackage {
-            src = falling-sand-src;
+          falling-sand-bin = craneLib.buildPackage {
+            src = fallingSandSrc;
             cargoArtifacts = self.packages.${system}.falling-sand-deps;
             cargoExtraArgs = "--features=parallel";
             inherit buildInputs;
             inherit nativeBuildInputs;
           };
 
-          falling-sand-bin-wasm = cross-build-bin {
+          falling-sand-bin-wasm = crossBuildBin {
             target = "wasm32-unknown-unknown";
             RUSTFLAGS = "--cfg=web_sys_unstable_apis";
             cargoExtraArgs = "--features=webgpu";
           };
 
-          falling-sand-bin-win64 = cross-build-bin {
+          falling-sand-bin-win64 = crossBuildBin {
             target = "x86_64-pc-windows-gnu";
             strictDeps = true;
             cargoExtraArgs = "--features=parallel";
@@ -123,19 +118,15 @@
 
           falling-sand-wasm-processed = pkgs.stdenvNoCC.mkDerivation {
             name = "falling-sand-wasm-processed";
-
             nativeBuildInputs = [
               pkgs.wasm-bindgen-cli
               pkgs.binaryen
             ];
-
             dontUnpack = true;
-
             buildPhase = ''
               wasm-bindgen --out-dir . --out-name falling-sand --target web ${self.packages.${system}.falling-sand-bin-wasm}/bin/falling-sand.wasm
               wasm-opt -Oz -o falling-sand_bg.wasm falling-sand_bg.wasm
             '';
-
             installPhase = ''
               mkdir -p $out
               cp falling-sand_bg.wasm $out/
@@ -152,7 +143,7 @@
             '';
           };
 
-          falling-sand-attribution = crane-lib.mkCargoDerivation {
+          falling-sand-attribution = craneLib.mkCargoDerivation {
             buildPhaseCargoCommand = "cargo --offline about generate about.hbs > third-party.html";
 
             src = pkgs.lib.cleanSourceWith {
@@ -191,13 +182,13 @@
             '';
           };
 
-          falling-sand = pack-dist {
+          falling-sand = mkPackDist {
             name = "falling-sand";
             bin = self.packages.${system}.falling-sand-bin;
             executable = "falling-sand";
           };
 
-          falling-sand-win64 = pack-dist {
+          falling-sand-win64 = mkPackDist {
             name = "falling-sand-win64";
             bin = self.packages.${system}.falling-sand-bin-win64;
             executable = "falling-sand.exe";
@@ -237,21 +228,21 @@
         checks = {
           inherit (self.packages.${system}) falling-sand-bin;
 
-          cargo-nextest = crane-lib.cargoNextest {
-            src = falling-sand-src;
+          cargo-nextest = craneLib.cargoNextest {
+            src = fallingSandSrc;
             cargoArtifacts = self.packages.${system}.falling-sand-deps;
             inherit buildInputs;
             inherit nativeBuildInputs;
           };
 
-          cargo-clippy = crane-lib.cargoClippy {
-            src = falling-sand-src;
+          cargo-clippy = craneLib.cargoClippy {
+            src = fallingSandSrc;
             cargoArtifacts = self.packages.${system}.falling-sand-deps;
             inherit buildInputs;
             inherit nativeBuildInputs;
           };
 
-          cargo-audit = crane-lib.cargoAudit {
+          cargo-audit = craneLib.cargoAudit {
             inherit (inputs) advisory-db;
             src = ./.;
             cargoArtifacts = self.packages.${system}.falling-sand-deps;
@@ -272,7 +263,7 @@
           };
         };
 
-        devShell = crane-lib.devShell {
+        devShell = craneLib.devShell {
           shellHook = ''
             export LD_LIBRARY_PATH="$LD_LIBRARY_PATH:${pkgs.lib.makeLibraryPath buildInputs}"
             ${self.checks.${system}.pre-commit-check.shellHook}

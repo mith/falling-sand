@@ -51,6 +51,10 @@ features = [
   "wayland",
 ]
 
+[dev-dependencies]
+proptest = "1.4.0"
+proptest-state-machine = "0.2.0"
+
 [dependencies]
 ndarray = { version = "0.15.6", features = ["rayon"] }
 enum-map = "2.4.1"
