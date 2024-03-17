@@ -9,7 +9,7 @@ on:
       - "flake.nix"
 
 jobs:
-  deploy-to-pages:
+  build-web:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

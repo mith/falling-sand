@@ -61,7 +61,7 @@ jobs:
           targets: x86_64-unknown-linux-gnu
       - name: install dependencies
         run: |
-          sudo apt-get update; sudo apt-get install pkg-config libx11-dev libasound2-dev libudev-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev
+          sudo apt-get update; sudo apt-get install pkg-config libx11-dev libasound2-dev libudev-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libwayland-dev
 
       - name: Build
         run: |
@@ -111,9 +111,8 @@ jobs:
       - run: nix build .#falling-sand-win64 -L
 
       - name: Package as a zip
-        working-directory: ./result
         run: |
-          zip --recurse-paths ../${{ env.binary }}.zip .
+          zip --recurse-paths ${{ env.binary }}.zip ./result
 
       - name: Upload binaries to artifacts
         uses: actions/upload-artifact@v3

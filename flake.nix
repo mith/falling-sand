@@ -197,10 +197,6 @@
           falling-sand-web = pkgs.stdenvNoCC.mkDerivation {
             name = "falling-sand-web";
             src = ./web;
-            nativeBuildInputs = [
-              pkgs.wasm-bindgen-cli
-              pkgs.binaryen
-            ];
             installPhase = ''
               mkdir -p $out
               cp $src/* $out/
