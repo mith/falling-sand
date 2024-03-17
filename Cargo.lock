@@ -1812,7 +1812,7 @@ dependencies = [
  "line_drawing",
  "morton-encoding",
  "ndarray",
- "nix 0.27.1",
+ "nix",
  "paste",
  "proptest",
  "proptest-state-machine",
@@ -1961,7 +1961,7 @@ dependencies = [
  "libc",
  "libudev-sys",
  "log",
- "nix 0.28.0",
+ "nix",
  "uuid",
  "vec_map",
  "wasm-bindgen",
@@ -2637,17 +2637,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8c196769dd60fd4f363e11d948139556a344e79d451aeb2fa2fd040738ef7691"
 dependencies = [
  "jni-sys",
-]
-
-[[package]]
-name = "nix"
-version = "0.27.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2eb04e9c688eff1c89d72b407f168cf79bb9e867a9d3323ed6c01519eb9cc053"
-dependencies = [
- "bitflags 2.4.2",
- "cfg-if",
- "libc",
 ]
 
 [[package]]
