@@ -8,10 +8,6 @@ jobs:
   test:
     uses: ./.github/workflows/test.yml
 
-  build-windows:
+  create-release:
     needs: test
-    uses: ./.github/workflows/build-windows.yml
-
-  deploy-to-pages:
-    needs: test
-    uses: ./.github/workflows/deploy-to-pages.yml
+    uses: ./.github/workflows/create-release.yml
