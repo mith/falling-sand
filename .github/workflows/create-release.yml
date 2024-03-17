@@ -1,0 +1,30 @@
+name: Create Release
+
+on:
+  workflow_call:
+
+jobs:
+  create-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Generate Release Name
+        id: release-name
+        run: echo "TAG_RELEASE_NAME=$(date +'%Y-%m-%d')-$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Create Release
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const releaseInfo = {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              tag_name: process.env.TAG_RELEASE_NAME,
+              target_commitish: process.env.GITHUB_REF,
+              generate_release_notes: true,
+            };
+            github.rest.repos.createRelease(releaseInfo);
+        env:
+          TAG_RELEASE_NAME: ${{ steps.release-name.outputs.TAG_RELEASE_NAME }}
