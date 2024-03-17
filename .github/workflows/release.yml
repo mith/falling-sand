@@ -43,7 +43,7 @@ jobs:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           file: ${{ env.binary }}.zip
           asset_name: ${{ env.binary }}-wasm-${{ steps.get_version.outputs.tag }}.zip
-          tag: ${{ github.ref }}
+          tag: ${{  steps.get_version.outputs.tag }}
           overwrite: true
 
   # Build for Linux
@@ -51,9 +51,12 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: olegtarasov/get-tag@2.1.3
-        id: get_version
       - uses: actions/checkout@v4
+      - id: get_version
+        run: |
+          COMMIT_DATE=$(git log -1 --format=%cd --date=format:'%Y-%m-%d')
+          REF=$(git rev-parse --short HEAD)
+          echo "tag=${COMMIT_DATE}-${REF}" >> "$GITHUB_OUTPUT"
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: x86_64-unknown-linux-gnu
@@ -90,7 +93,7 @@ jobs:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           file: ${{ env.binary }}.zip
           asset_name: ${{ env.binary }}-linux-${{ steps.get_version.outputs.tag }}.zip
-          tag: ${{ github.ref }}
+          tag: ${{  steps.get_version.outputs.tag }}
           overwrite: true
 
   # Build for Windows
@@ -98,9 +101,12 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: olegtarasov/get-tag@2.1.3
-        id: get_version
       - uses: actions/checkout@v4
+      - id: get_version
+        run: |
+          COMMIT_DATE=$(git log -1 --format=%cd --date=format:'%Y-%m-%d')
+          REF=$(git rev-parse --short HEAD)
+          echo "tag=${COMMIT_DATE}-${REF}" >> "$GITHUB_OUTPUT"
       - uses: DeterminateSystems/nix-installer-action@main
       - uses: DeterminateSystems/magic-nix-cache-action@main
 
@@ -124,7 +130,7 @@ jobs:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           file: ${{ env.binary }}.zip
           asset_name: ${{ env.binary }}-windows-${{ steps.get_version.outputs.tag }}.zip
-          tag: ${{ github.ref }}
+          tag: ${{  steps.get_version.outputs.tag }}
           overwrite: true
 
   # Build for MacOS x86_64
@@ -132,11 +138,12 @@ jobs:
     runs-on: macOS-latest
 
     steps:
-      - uses: olegtarasov/get-tag@2.1.3
-        id: get_version
       - uses: actions/checkout@v4
-        with:
-          lfs: ${{ env.use_git_lfs }}
+      - id: get_version
+        run: |
+          COMMIT_DATE=$(git log -1 --format=%cd --date=format:'%Y-%m-%d')
+          REF=$(git rev-parse --short HEAD)
+          echo "tag=${COMMIT_DATE}-${REF}" >> "$GITHUB_OUTPUT"
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: x86_64-apple-darwin
@@ -170,7 +177,7 @@ jobs:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           file:  ${{ env.binary }}-macOS-intel.dmg
           asset_name: ${{ env.binary }}-macOS-intel-${{ steps.get_version.outputs.tag }}.dmg
-          tag: ${{ github.ref }}
+          tag: ${{  steps.get_version.outputs.tag }}
           overwrite: true
 
   # Build for MacOS Apple Silicon
@@ -178,8 +185,11 @@ jobs:
     runs-on: macOS-latest
 
     steps:
-      - uses: olegtarasov/get-tag@2.1.3
-        id: get_version
+      - id: get_version
+        run: |
+          COMMIT_DATE=$(git log -1 --format=%cd --date=format:'%Y-%m-%d')
+          REF=$(git rev-parse --short HEAD)
+          echo "tag=${COMMIT_DATE}-${REF}" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -214,5 +224,5 @@ jobs:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           file: ${{ env.binary }}-macOS-apple-silicon.dmg
           asset_name: ${{ env.binary }}-macOS-apple-silicon-${{ steps.get_version.outputs.tag }}.dmg
-          tag: ${{ github.ref }}
+          tag: ${{  steps.get_version.outputs.tag }}
           overwrite: true
