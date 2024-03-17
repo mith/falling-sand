@@ -51,9 +51,12 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: olegtarasov/get-tag@2.1.3
-        id: get_version
       - uses: actions/checkout@v4
+      - id: get_version
+        run: |
+          COMMIT_DATE=$(git log -1 --format=%cd --date=format:'%Y-%m-%d')
+          REF=$(git rev-parse --short HEAD)
+          echo "tag=${COMMIT_DATE}-${REF}" >> "$GITHUB_OUTPUT"
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: x86_64-unknown-linux-gnu
@@ -98,9 +101,12 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: olegtarasov/get-tag@2.1.3
-        id: get_version
       - uses: actions/checkout@v4
+      - id: get_version
+        run: |
+          COMMIT_DATE=$(git log -1 --format=%cd --date=format:'%Y-%m-%d')
+          REF=$(git rev-parse --short HEAD)
+          echo "tag=${COMMIT_DATE}-${REF}" >> "$GITHUB_OUTPUT"
       - uses: DeterminateSystems/nix-installer-action@main
       - uses: DeterminateSystems/magic-nix-cache-action@main
 
@@ -132,11 +138,12 @@ jobs:
     runs-on: macOS-latest
 
     steps:
-      - uses: olegtarasov/get-tag@2.1.3
-        id: get_version
       - uses: actions/checkout@v4
-        with:
-          lfs: ${{ env.use_git_lfs }}
+      - id: get_version
+        run: |
+          COMMIT_DATE=$(git log -1 --format=%cd --date=format:'%Y-%m-%d')
+          REF=$(git rev-parse --short HEAD)
+          echo "tag=${COMMIT_DATE}-${REF}" >> "$GITHUB_OUTPUT"
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: x86_64-apple-darwin
@@ -178,8 +185,11 @@ jobs:
     runs-on: macOS-latest
 
     steps:
-      - uses: olegtarasov/get-tag@2.1.3
-        id: get_version
+      - id: get_version
+        run: |
+          COMMIT_DATE=$(git log -1 --format=%cd --date=format:'%Y-%m-%d')
+          REF=$(git rev-parse --short HEAD)
+          echo "tag=${COMMIT_DATE}-${REF}" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
