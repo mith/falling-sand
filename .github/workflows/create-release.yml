@@ -17,7 +17,6 @@ jobs:
           REF=$(git rev-parse --short HEAD)
           echo "TAG_RELEASE_NAME=${COMMIT_DATE}-${REF}" >> "$GITHUB_OUTPUT"
              
-
       - name: Create Release
         uses: actions/github-script@v7
         with:
