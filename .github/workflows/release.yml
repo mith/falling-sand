@@ -100,8 +100,8 @@ jobs:
     steps:
       - uses: olegtarasov/get-tag@2.1.3
         id: get_version
-      - uses: DeterminateSystems/nix-installer-action@main
       - uses: actions/checkout@v4
+      - uses: DeterminateSystems/nix-installer-action@main
       - uses: DeterminateSystems/magic-nix-cache-action@main
 
       - run: nix build .#falling-sand-win64 -L
