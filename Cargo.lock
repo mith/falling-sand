@@ -3110,9 +3110,9 @@ dependencies = [
 
 [[package]]
 name = "proptest-state-machine"
-version = "0.2.0"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3335ff7ca260a9f2d3eef64713c4dfe7e42eca32fa020bd7add99285ff3b792b"
+checksum = "28278d6a11102264b0c569c33dbe5286ba00d2dd6d96ff2a94296e0e5b3d1e04"
 dependencies = [
  "proptest",
 ]
