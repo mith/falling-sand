@@ -24,7 +24,7 @@ jobs:
       - uses: DeterminateSystems/magic-nix-cache-action@main
       - run: nix build .#falling-sand-web -L
       - name: Setup Pages
-        uses: actions/configure-pages@v4
+        uses: actions/configure-pages@v5
       - name: Package as a zip
         working-directory: ./result
         run: |
