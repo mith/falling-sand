@@ -62,7 +62,7 @@ bytemuck = { version = "1.15.0", features = ["derive"] }
 # bevy_egui = "0.24.0"
 # bevy-inspector-egui = "0.22.0"
 nix = { version = "0.28.0", features = ["process"] }
-half = { version = "2.3.1", features = [
+half = { version = "2.4.1", features = [
   "bytemuck",
   "serde",
   "num-traits",
